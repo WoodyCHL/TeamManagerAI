@@ -22,6 +22,32 @@
     font-size: 20px;
   }
 
+  .notice {
+    background: #eef7f6;
+    border: 1px solid #2fd6c4;
+    border-left: 3px solid #2fd6c4;
+    padding: 10px 12px;
+    border-radius: 3px;
+    font-size: 13px;
+    color: #0e6b60;
+    margin-bottom: 4px;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: #4a5f74;
+    cursor: pointer;
+  }
+
+  .checkbox-row input {
+    width: auto;
+    margin-top: 2px;
+  }
+
   .switch-link {
     margin-top: 16px;
     font-size: 13px;
@@ -98,6 +124,10 @@
 </div>
 
 <div id="createForm" style="display:none;">
+  <div class="notice">
+    Only the team lead should create a new team. If you're joining an existing team, use "Sign in" instead.
+  </div>
+
   <label for="teamName">Team name</label>
   <input id="teamName">
 
@@ -109,6 +139,11 @@
 
   <label for="adminName">Your name</label>
   <input id="adminName">
+
+  <label class="checkbox-row">
+    <input type="checkbox" id="confirmLead">
+    I confirm I am the team lead setting up this team
+  </label>
 
   <button class="submit" id="createBtn" onclick="createTeam()">Create team</button>
 
@@ -158,9 +193,15 @@
     const number = document.getElementById('teamNumber').value.trim();
     const password = document.getElementById('teamPassword').value;
     const adminName = document.getElementById('adminName').value.trim();
+    const confirmed = document.getElementById('confirmLead').checked;
 
     if (!name || !number || !password || !adminName) {
       showError('Fill in all fields.');
+      return;
+    }
+
+    if (!confirmed) {
+      showError('Please confirm you are the team lead before creating a team.');
       return;
     }
 
