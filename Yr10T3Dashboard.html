@@ -4,10 +4,12 @@
 <meta charset="UTF-8">
 <title>title</title>
 <style>
+  * { box-sizing: border-box; }
+
   body {
     font-family: Arial, sans-serif;
-    max-width: 500px;
-    margin: 60px auto;
+    max-width: 640px;
+    margin: 0 auto;
     background: #eef3f7;
     background-image:
       linear-gradient(rgba(14, 36, 56, 0.08) 1px, transparent 1px),
@@ -15,12 +17,22 @@
     background-size: 24px 24px;
     background-attachment: fixed;
     color: #0e2438;
-    padding: 24px;
+    padding: 0 24px 40px;
+  }
+
+  /* top bar */
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 0 16px;
+    position: relative;
   }
 
   h1 {
-    font-size: 20px;
-    margin-bottom: 0;
+    font-size: 22px;
+    margin: 0;
+    letter-spacing: -0.01em;
   }
 
   .team-meta {
@@ -29,22 +41,137 @@
     margin-top: 4px;
   }
 
+  .menu-btn {
+    background: #0e2438;
+    border: none;
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .menu-btn span {
+    display: block;
+    width: 18px;
+    height: 2px;
+    background: #eef3f7;
+    margin: 2px 0;
+    border-radius: 1px;
+  }
+
+  /* dropdown menu */
+  .menu-dropdown {
+    display: none;
+    position: absolute;
+    top: 60px;
+    right: 0;
+    background: #fff;
+    border: 1px solid #d7e1e9;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(14, 36, 56, 0.14);
+    min-width: 220px;
+    overflow: hidden;
+    z-index: 10;
+  }
+
+  .menu-dropdown.open {
+    display: block;
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    border-bottom: 1px solid #eef3f7;
+    background: #fff;
+  }
+
+  .menu-item:last-child {
+    border-bottom: none;
+  }
+
+  .menu-item:hover {
+    background: #f8fafb;
+  }
+
+  .menu-item.active {
+    background: #fff6ee;
+    color: #ff7a3d;
+    font-weight: bold;
+  }
+
+  .menu-icon {
+    font-size: 18px;
+    width: 22px;
+    text-align: center;
+  }
+
+  /* panels */
   .panel {
     background: #fff;
     border: 1px solid #d7e1e9;
-    border-radius: 3px;
-    padding: 16px;
-    margin-top: 20px;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(14, 36, 56, 0.06);
+    display: none;
+  }
+
+  .panel.active {
+    display: block;
+  }
+
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
   }
 
   .panel h2 {
-    font-size: 14px;
+    font-size: 13px;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #4a5f74;
-    margin-top: 0;
+    letter-spacing: 0.06em;
+    color: #6b7f92;
+    margin: 0;
   }
 
+  .btn {
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    font-weight: bold;
+    padding: 7px 14px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: #ff7a3d;
+    color: #fff;
+  }
+
+  .btn-secondary {
+    background: #eef3f7;
+    color: #0e2438;
+    border: 1px solid #d7e1e9;
+  }
+
+  .btn-danger {
+    background: #fff0ef;
+    color: #c23b3b;
+    border: 1px solid #f3c6c2;
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+
+  /* roster */
   .member-row {
     display: flex;
     justify-content: space-between;
@@ -52,6 +179,7 @@
     padding: 8px 0;
     border-bottom: 1px solid #eef3f7;
     font-size: 14px;
+    gap: 8px;
   }
 
   .member-row:last-child {
@@ -59,6 +187,12 @@
   }
 
   .member-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .member-controls {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -80,30 +214,240 @@
     border-radius: 3px;
   }
 
-  .role-select {
+  .role-select, .status-select {
     font-family: Arial, sans-serif;
-    font-size: 13px;
+    font-size: 12px;
     padding: 4px 6px;
     border: 1px solid #d7e1e9;
-    border-radius: 3px;
+    border-radius: 6px;
     background: #fff;
+  }
+
+  /* tasks */
+  .task-card {
+    border: 1px solid #eef3f7;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+
+  .task-card:last-child {
+    margin-bottom: 0;
+  }
+
+  .task-title {
+    font-weight: bold;
+    font-size: 14px;
+  }
+
+  .task-desc {
+    font-size: 13px;
+    color: #4a5f74;
+    margin-top: 4px;
+  }
+
+  .task-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+
+  .subsystem-badge {
+    font-size: 11px;
+    background: #eef3f7;
+    color: #4a5f74;
+    padding: 2px 8px;
+    border-radius: 3px;
+    text-transform: capitalize;
+  }
+
+  .assignee-tag {
+    font-size: 12px;
+    color: #4a5f74;
+  }
+
+  .empty-state {
+    font-size: 13px;
+    color: #8a99a8;
+    font-style: italic;
+    padding: 8px 0;
+  }
+
+  /* AI task creation panel */
+  .ai-form {
+    display: none;
+    background: #f8fafb;
+    border: 1px solid #d7e1e9;
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+
+  .ai-form.open {
+    display: block;
+  }
+
+  .ai-placeholder-note {
+    background: #fff6ee;
+    border: 1px solid #ffd9bd;
+    border-left: 4px solid #ff7a3d;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #8a4318;
+    margin-bottom: 12px;
+  }
+
+  label {
+    display: block;
+    margin-top: 10px;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #6b7f92;
+  }
+
+  label:first-of-type {
+    margin-top: 0;
+  }
+
+  input, textarea, select {
+    width: 100%;
+    padding: 8px 10px;
+    margin-top: 4px;
+    border: 1px solid #d7e1e9;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 13px;
+    font-family: Arial, sans-serif;
+    color: #0e2438;
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 50px;
+  }
+
+  input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: #ff7a3d;
+  }
+
+  /* meeting notes */
+  .note {
+    border-bottom: 1px solid #eef3f7;
+    padding: 10px 0;
+    font-size: 13px;
+  }
+
+  .note:last-child {
+    border-bottom: none;
+  }
+
+  .note-meta {
+    font-size: 11px;
+    color: #8a99a8;
+    margin-top: 4px;
   }
 
   #error {
     color: #c23b3b;
-    margin-top: 10px;
+    margin-top: 16px;
     font-size: 13px;
   }
 </style>
 </head>
 <body>
 
-<h1 id="teamNameLabel">Loading…</h1>
-<div class="team-meta" id="teamNumberLabel"></div>
+<div class="topbar">
+  <div>
+    <h1 id="teamNameLabel">Loading…</h1>
+    <div class="team-meta" id="teamNumberLabel"></div>
+  </div>
 
-<div class="panel">
-  <h2>Team roster</h2>
+  <button class="menu-btn" onclick="toggleMenu()">
+    <span></span><span></span><span></span>
+  </button>
+
+  <div class="menu-dropdown" id="menuDropdown">
+    <div class="menu-item" data-view="roster" onclick="switchView('roster')">
+      <span class="menu-icon">👥</span> Team roster
+    </div>
+    <div class="menu-item" data-view="tasks" onclick="switchView('tasks')">
+      <span class="menu-icon">✅</span> Tasks
+    </div>
+    <div class="menu-item" data-view="notes" onclick="switchView('notes')">
+      <span class="menu-icon">📝</span> Meeting notes
+    </div>
+  </div>
+</div>
+
+<!-- ROSTER -->
+<div class="panel" id="panel-roster">
+  <div class="panel-head">
+    <h2>Team roster</h2>
+  </div>
   <div id="rosterList">Loading members…</div>
+</div>
+
+<!-- TASKS -->
+<div class="panel" id="panel-tasks">
+  <div class="panel-head">
+    <h2>Tasks</h2>
+    <button class="btn btn-primary" id="createTaskBtn" style="display:none;" onclick="toggleAiForm()">+ Create task with AI</button>
+  </div>
+
+  <div class="ai-form" id="aiForm">
+    <div class="ai-placeholder-note">
+      AI generation isn't wired up yet — this is a placeholder. Fill in the fields and click "Generate" to see where the AI suggestion will appear once the API key is added.
+    </div>
+
+    <label for="aiSubsystem">Subsystem</label>
+    <select id="aiSubsystem">
+      <option value="drivetrain">Drivetrain</option>
+      <option value="arm">Arm</option>
+      <option value="sensors">Sensors</option>
+      <option value="programming">Programming</option>
+      <option value="testing">Testing</option>
+    </select>
+
+    <label for="aiDescription">Rough description</label>
+    <textarea id="aiDescription" placeholder="e.g. wire up the drivetrain motors and test forward/reverse"></textarea>
+
+    <button class="btn btn-secondary" style="margin-top:12px;" onclick="generateTaskWithAI()">Generate</button>
+
+    <div id="aiResult" style="display:none; margin-top: 14px; border-top: 1px solid #d7e1e9; padding-top: 14px;">
+      <label for="taskTitle">Task title</label>
+      <input id="taskTitle">
+
+      <label for="taskDesc">Description</label>
+      <textarea id="taskDesc"></textarea>
+
+      <label for="taskAssignee">Assign to</label>
+      <select id="taskAssignee"></select>
+
+      <button class="btn btn-primary" style="margin-top:12px;" onclick="saveTask()">Save task</button>
+      <button class="btn btn-secondary" style="margin-top:12px;" onclick="toggleAiForm()">Cancel</button>
+    </div>
+  </div>
+
+  <div id="taskList"></div>
+</div>
+
+<!-- MEETING NOTES -->
+<div class="panel" id="panel-notes">
+  <div class="panel-head">
+    <h2>Meeting notes</h2>
+  </div>
+
+  <textarea id="newNoteText" placeholder="Add a note from today's meeting…"></textarea>
+  <button class="btn btn-primary" style="margin-top:10px;" onclick="addNote()">Add note</button>
+
+  <div id="notesList" style="margin-top: 16px;"></div>
 </div>
 
 <div id="error"></div>
@@ -121,6 +465,15 @@
     appId: "1:485437103519:web:f1174f549f5a2f811df1aa"
   };
 
+  // ---------------------------------------------------------
+  // Placeholder for your OpenRouter API key.
+  // Get one free at openrouter.ai -> Settings -> Keys.
+  // NOTE: since this is a static site, this key is visible to
+  // anyone who views the page source. Fine for a free-tier
+  // school project key, but worth knowing.
+  // ---------------------------------------------------------
+  const OPENROUTER_API_KEY = "PASTE_YOUR_OPENROUTER_KEY_HERE";
+
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
@@ -128,6 +481,8 @@
   const myName = localStorage.getItem('memberName');
 
   let currentMembers = [];
+  let currentTasks = [];
+  let currentNotes = [];
   let teamRef = null;
   let isCurrentUserLead = false;
 
@@ -138,6 +493,32 @@
   } else {
     loadTeam();
   }
+
+  // ---------------- NAVIGATION ----------------
+
+  window.toggleMenu = function() {
+    document.getElementById('menuDropdown').classList.toggle('open');
+  };
+
+  window.switchView = function(view) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById(`panel-${view}`).classList.add('active');
+
+    document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+    document.querySelector(`.menu-item[data-view="${view}"]`).classList.add('active');
+
+    document.getElementById('menuDropdown').classList.remove('open');
+  };
+
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('menuDropdown');
+    const menuBtn = document.querySelector('.menu-btn');
+    if (!dropdown.contains(e.target) && !menuBtn.contains(e.target)) {
+      dropdown.classList.remove('open');
+    }
+  });
+
+  // ---------------- LOAD ----------------
 
   async function loadTeam() {
     try {
@@ -151,6 +532,8 @@
 
       const team = snap.data();
       currentMembers = team.members || [];
+      currentTasks = team.tasks || [];
+      currentNotes = team.notes || [];
 
       const me = currentMembers.find(
         m => m.name.trim().toLowerCase() === (myName || '').trim().toLowerCase()
@@ -160,7 +543,15 @@
       document.getElementById('teamNameLabel').textContent = team.name;
       document.getElementById('teamNumberLabel').textContent = `Team number: ${team.number}`;
 
+      if (isCurrentUserLead) {
+        document.getElementById('createTaskBtn').style.display = 'inline-block';
+      }
+
       renderRoster();
+      renderTasks();
+      renderNotes();
+
+      switchView('roster');
 
     } catch (err) {
       console.error(err);
@@ -168,11 +559,22 @@
     }
   }
 
+  async function saveTeamField(fields) {
+    try {
+      await updateDoc(teamRef, fields);
+    } catch (err) {
+      console.error(err);
+      document.getElementById('error').textContent = 'Could not save: ' + err.message;
+    }
+  }
+
+  // ---------------- ROSTER ----------------
+
   function renderRoster() {
     const list = document.getElementById('rosterList');
 
     if (currentMembers.length === 0) {
-      list.innerHTML = '<div class="member-row">No members yet.</div>';
+      list.innerHTML = '<div class="empty-state">No members yet.</div>';
       return;
     }
 
@@ -182,16 +584,20 @@
           ${escapeHtml(m.name)}
           ${m.isAdmin ? '<span class="admin-badge">TEAM LEAD</span>' : ''}
         </span>
-        ${roleControlHtml(m, i)}
+        <span class="member-controls">
+          ${roleControlHtml(m, i)}
+          ${kickButtonHtml(m, i)}
+        </span>
       </div>
     `).join('');
 
     if (isCurrentUserLead) {
       currentMembers.forEach((m, i) => {
         const select = document.getElementById(`roleSelect-${i}`);
-        if (select) {
-          select.addEventListener('change', () => setRole(i, select.value));
-        }
+        if (select) select.addEventListener('change', () => setRole(i, select.value));
+
+        const kickBtn = document.getElementById(`kickBtn-${i}`);
+        if (kickBtn) kickBtn.addEventListener('click', () => kickMember(i));
       });
     }
   }
@@ -206,15 +612,173 @@
     return m.role ? `<span class="role-badge">${escapeHtml(m.role)}</span>` : '';
   }
 
+  function kickButtonHtml(m, i) {
+    if (isCurrentUserLead && !m.isAdmin) {
+      return `<button class="btn btn-danger" id="kickBtn-${i}">Remove</button>`;
+    }
+    return '';
+  }
+
   async function setRole(index, newRole) {
     currentMembers[index] = { ...currentMembers[index], role: newRole || null };
-    try {
-      await updateDoc(teamRef, { members: currentMembers });
-    } catch (err) {
-      console.error(err);
-      document.getElementById('error').textContent = 'Could not save role: ' + err.message;
-    }
+    await saveTeamField({ members: currentMembers });
   }
+
+  async function kickMember(index) {
+    const member = currentMembers[index];
+    if (!confirm(`Remove ${member.name} from the team? This can't be undone.`)) return;
+
+    currentMembers = currentMembers.filter((_, i) => i !== index);
+    await saveTeamField({ members: currentMembers });
+    renderRoster();
+  }
+
+  // ---------------- TASKS ----------------
+
+  function renderTasks() {
+    const list = document.getElementById('taskList');
+
+    if (currentTasks.length === 0) {
+      list.innerHTML = '<div class="empty-state">No tasks yet.</div>';
+      return;
+    }
+
+    list.innerHTML = currentTasks.map((t, i) => `
+      <div class="task-card">
+        <div class="task-title">${escapeHtml(t.title)}</div>
+        <div class="task-desc">${escapeHtml(t.description || '')}</div>
+        <div class="task-meta">
+          <span class="subsystem-badge">${escapeHtml(t.subsystem || 'general')}</span>
+          <span class="assignee-tag">${t.assignedName ? '→ ' + escapeHtml(t.assignedName) : 'Unassigned'}</span>
+          <select class="status-select" id="statusSelect-${i}">
+            <option value="todo" ${t.status === 'todo' ? 'selected' : ''}>To do</option>
+            <option value="in_progress" ${t.status === 'in_progress' ? 'selected' : ''}>In progress</option>
+            <option value="done" ${t.status === 'done' ? 'selected' : ''}>Done</option>
+          </select>
+        </div>
+      </div>
+    `).join('');
+
+    currentTasks.forEach((t, i) => {
+      const select = document.getElementById(`statusSelect-${i}`);
+      if (select) select.addEventListener('change', () => setTaskStatus(i, select.value));
+    });
+  }
+
+  async function setTaskStatus(index, newStatus) {
+    currentTasks[index] = { ...currentTasks[index], status: newStatus };
+    await saveTeamField({ tasks: currentTasks });
+  }
+
+  window.toggleAiForm = function() {
+    document.getElementById('aiForm').classList.toggle('open');
+    document.getElementById('aiResult').style.display = 'none';
+  };
+
+  window.generateTaskWithAI = async function() {
+    const subsystem = document.getElementById('aiSubsystem').value;
+    const description = document.getElementById('aiDescription').value.trim();
+
+    if (!description) {
+      document.getElementById('error').textContent = 'Describe the task before generating.';
+      return;
+    }
+
+    // ---------------------------------------------------------
+    // PLACEHOLDER: this is where the real AI call goes.
+    // Once OPENROUTER_API_KEY is set above, replace this block with:
+    //
+    // const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    //   method: "POST",
+    //   headers: {
+    //     "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+    //     "Content-Type": "application/json"
+    //   },
+    //   body: JSON.stringify({
+    //     model: "qwen/qwen3.6-plus:free",
+    //     messages: [{ role: "user", content: buildPrompt(subsystem, description) }]
+    //   })
+    // });
+    // const data = await res.json();
+    // const aiText = data.choices[0].message.content;
+    // ... parse aiText as JSON and fill the fields below
+    // ---------------------------------------------------------
+
+    document.getElementById('taskTitle').value = `[Placeholder] ${subsystem} task`;
+    document.getElementById('taskDesc').value = description;
+
+    const assigneeSelect = document.getElementById('taskAssignee');
+    assigneeSelect.innerHTML = currentMembers
+      .map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)}${m.role ? ' (' + m.role + ')' : ''}</option>`)
+      .join('');
+
+    document.getElementById('aiResult').style.display = 'block';
+  };
+
+  window.saveTask = async function() {
+    const title = document.getElementById('taskTitle').value.trim();
+    const description = document.getElementById('taskDesc').value.trim();
+    const subsystem = document.getElementById('aiSubsystem').value;
+    const assignedName = document.getElementById('taskAssignee').value;
+
+    if (!title) {
+      document.getElementById('error').textContent = 'Task needs a title.';
+      return;
+    }
+
+    const newTask = {
+      id: Date.now().toString(),
+      title,
+      description,
+      subsystem,
+      assignedName: assignedName || null,
+      status: 'todo'
+    };
+
+    currentTasks = [...currentTasks, newTask];
+    await saveTeamField({ tasks: currentTasks });
+    renderTasks();
+
+    document.getElementById('aiForm').classList.remove('open');
+    document.getElementById('aiDescription').value = '';
+  };
+
+  // ---------------- MEETING NOTES ----------------
+
+  function renderNotes() {
+    const list = document.getElementById('notesList');
+
+    if (currentNotes.length === 0) {
+      list.innerHTML = '<div class="empty-state">No notes yet.</div>';
+      return;
+    }
+
+    const sorted = [...currentNotes].sort((a, b) => b.createdAt - a.createdAt);
+
+    list.innerHTML = sorted.map(n => `
+      <div class="note">
+        <div>${escapeHtml(n.text)}</div>
+        <div class="note-meta">${escapeHtml(n.author)} · ${new Date(n.createdAt).toLocaleString()}</div>
+      </div>
+    `).join('');
+  }
+
+  window.addNote = async function() {
+    const textEl = document.getElementById('newNoteText');
+    const text = textEl.value.trim();
+    if (!text) return;
+
+    const newNote = {
+      text,
+      author: myName || 'Unknown',
+      createdAt: Date.now()
+    };
+
+    currentNotes = [...currentNotes, newNote];
+    await saveTeamField({ notes: currentNotes });
+    renderNotes();
+    textEl.value = '';
+  };
 
   function escapeHtml(str) {
     const div = document.createElement('div');
