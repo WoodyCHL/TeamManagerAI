@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>title</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 400px;
+    margin: 60px auto;
+    background: #eef3f7;
+    background-image:
+      linear-gradient(rgba(14, 36, 56, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(14, 36, 56, 0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-attachment: fixed;
+    color: #0e2438;
+    padding: 24px;
+  }
+
+  h1 {
+    font-size: 20px;
+  }
+
+  .tabs {
+    display: flex;
+    margin-bottom: 20px;
+    border: 1px solid #d7e1e9;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .tabs button {
+    flex: 1;
+    padding: 8px;
+    background: #fff;
+    border: none;
+    cursor: pointer;
+    color: #4a5f74;
+  }
+
+  .tabs button.active {
+    font-weight: bold;
+    background: #0e2438;
+    color: #eef3f7;
+  }
+
+  label {
+    display: block;
+    margin-top: 12px;
+    font-size: 13px;
+    color: #4a5f74;
+  }
+
+  input {
+    width: 100%;
+    padding: 6px;
+    margin-top: 4px;
+    border: 1px solid #d7e1e9;
+    border-radius: 3px;
+    background: #fff;
+  }
+
+  button.submit {
+    margin-top: 16px;
+    padding: 8px 16px;
+    background: #ff7a3d;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+
+  button.submit:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  #error {
+    color: #c23b3b;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<h1>title</h1>
+
+<div class="tabs">
+  <button id="tabCreate" class="active" onclick="showForm('create')">Create team</button>
+  <button id="tabJoin" onclick="showForm('join')">Join / Sign in</button>
+</div>
+
+<div id="createForm">
+  <label for="teamName">Team name</label>
+  <input id="teamName">
+
+  <label for="teamNumber">Team number</label>
+  <input id="teamNumber">
+
+  <label for="teamPassword">Set a password</label>
+  <input id="teamPassword" type="password">
+
+  <label for="adminName">Your name</label>
+  <input id="adminName">
+
+  <button class="submit" id="createBtn" onclick="createTeam()">Create team</button>
+</div>
+
+<div id="joinForm" style="display:none;">
+  <label for="joinNumber">Team number</label>
+  <input id="joinNumber">
+
+  <label for="joinPassword">Password</label>
+  <input id="joinPassword" type="password">
+
+  <label for="memberName">Your name</label>
+  <input id="memberName">
+
+  <button class="submit" id="joinBtn" onclick="joinTeam()">Join / Sign in</button>
+</div>
+
+<div id="error"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getFirestore, collection, query, where, getDocs,
+    addDoc, updateDoc, arrayUnion
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBeEGjkfjNGK0ftzvxLhqc4oZ3ZT35_5vc",
+    authDomain: "yr10digital.firebaseapp.com",
+    projectId: "yr10digital",
+    storageBucket: "yr10digital.firebasestorage.app",
+    messagingSenderId: "485437103519",
+    appId: "1:485437103519:web:f1174f549f5a2f811df1aa"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const teamsRef = collection(db, "teams");
+
+  window.showForm = function(which) {
+    document.getElementById('tabCreate').classList.toggle('active', which === 'create');
+    document.getElementById('tabJoin').classList.toggle('active', which === 'join');
+    document.getElementById('createForm').style.display = which === 'create' ? 'block' : 'none';
+    document.getElementById('joinForm').style.display = which === 'join' ? 'block' : 'none';
+    document.getElementById('error').textContent = '';
+  };
+
+  function showError(msg) {
+    document.getElementById('error').textContent = msg;
+  }
+
+  function setLoading(btnId, loading, label) {
+    const btn = document.getElementById(btnId);
+    btn.disabled = loading;
+    btn.textContent = loading ? 'Please wait…' : label;
+  }
+
+  window.createTeam = async function() {
+    const name = document.getElementById('teamName').value.trim();
+    const number = document.getElementById('teamNumber').value.trim();
+    const password = document.getElementById('teamPassword').value;
+    const adminName = document.getElementById('adminName').value.trim();
+
+    if (!name || !number || !password || !adminName) {
+      showError('Fill in all fields.');
+      return;
+    }
+
+    setLoading('createBtn', true, 'Create team');
+    try {
+      // check the team number isn't already taken
+      const existing = await getDocs(query(teamsRef, where('number', '==', number)));
+      if (!existing.empty) {
+        showError('That team number is already taken.');
+        return;
+      }
+
+      const docRef = await addDoc(teamsRef, {
+        name,
+        number,
+        password,
+        members: [{ name: adminName, isAdmin: true, role: null }]
+      });
+
+      localStorage.setItem('teamId', docRef.id);
+      localStorage.setItem('memberName', adminName);
+      window.location.href = 'Yr10T3Dashboard.html';
+
+    } catch (err) {
+      console.error(err);
+      showError('Something went wrong: ' + err.message);
+    } finally {
+      setLoading('createBtn', false, 'Create team');
+    }
+  };
+
+  window.joinTeam = async function() {
+    const number = document.getElementById('joinNumber').value.trim();
+    const password = document.getElementById('joinPassword').value;
+    const memberName = document.getElementById('memberName').value.trim();
+
+    if (!number || !password || !memberName) {
+      showError('Fill in all fields.');
+      return;
+    }
+
+    setLoading('joinBtn', true, 'Join / Sign in');
+    try {
+      const found = await getDocs(query(teamsRef, where('number', '==', number)));
+      if (found.empty) {
+        showError('Team number not found.');
+        return;
+      }
+
+      const teamDoc = found.docs[0];
+      const teamData = teamDoc.data();
+
+      if (teamData.password !== password) {
+        showError('Incorrect password.');
+        return;
+      }
+
+      // Check if this name already belongs to someone on the team —
+      // if so, sign back in as them instead of creating a duplicate.
+      const members = teamData.members || [];
+      const existing = members.find(
+        m => m.name.trim().toLowerCase() === memberName.toLowerCase()
+      );
+
+      if (!existing) {
+        await updateDoc(teamDoc.ref, {
+          members: arrayUnion({ name: memberName, isAdmin: false, role: null })
+        });
+      }
+      // if existing, do nothing to the database — just sign them in below
+
+      localStorage.setItem('teamId', teamDoc.id);
+      localStorage.setItem('memberName', existing ? existing.name : memberName);
+      window.location.href = 'Yr10T3Dashboard.html';
+
+    } catch (err) {
+      console.error(err);
+      showError('Something went wrong: ' + err.message);
+    } finally {
+      setLoading('joinBtn', false, 'Join / Sign in');
+    }
+  };
+</script>
+
+</body>
+</html>
