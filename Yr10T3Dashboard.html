@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>title</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 500px;
+    margin: 60px auto;
+    background: #eef3f7;
+    background-image:
+      linear-gradient(rgba(14, 36, 56, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(14, 36, 56, 0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-attachment: fixed;
+    color: #0e2438;
+    padding: 24px;
+  }
+
+  h1 {
+    font-size: 20px;
+    margin-bottom: 0;
+  }
+
+  .team-meta {
+    font-size: 13px;
+    color: #4a5f74;
+    margin-top: 4px;
+  }
+
+  .panel {
+    background: #fff;
+    border: 1px solid #d7e1e9;
+    border-radius: 3px;
+    padding: 16px;
+    margin-top: 20px;
+  }
+
+  .panel h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #4a5f74;
+    margin-top: 0;
+  }
+
+  .member-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #eef3f7;
+    font-size: 14px;
+  }
+
+  .member-row:last-child {
+    border-bottom: none;
+  }
+
+  .member-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .admin-badge {
+    font-size: 11px;
+    background: #ff7a3d;
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  .role-badge {
+    font-size: 11px;
+    background: #2fd6c4;
+    color: #0e2438;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  .role-select {
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    padding: 4px 6px;
+    border: 1px solid #d7e1e9;
+    border-radius: 3px;
+    background: #fff;
+  }
+
+  #error {
+    color: #c23b3b;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<h1 id="teamNameLabel">Loading…</h1>
+<div class="team-meta" id="teamNumberLabel"></div>
+
+<div class="panel">
+  <h2>Team roster</h2>
+  <div id="rosterList">Loading members…</div>
+</div>
+
+<div id="error"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBeEGjkfjNGK0ftzvxLhqc4oZ3ZT35_5vc",
+    authDomain: "yr10digital.firebaseapp.com",
+    projectId: "yr10digital",
+    storageBucket: "yr10digital.firebasestorage.app",
+    messagingSenderId: "485437103519",
+    appId: "1:485437103519:web:f1174f549f5a2f811df1aa"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const teamId = localStorage.getItem('teamId');
+  const myName = localStorage.getItem('memberName');
+
+  let currentMembers = [];
+  let teamRef = null;
+  let isCurrentUserLead = false;
+
+  const ROLES = ['Coder', 'Builder'];
+
+  if (!teamId) {
+    document.getElementById('error').textContent = 'No team found — go back and create or join a team first.';
+  } else {
+    loadTeam();
+  }
+
+  async function loadTeam() {
+    try {
+      teamRef = doc(db, "teams", teamId);
+      const snap = await getDoc(teamRef);
+
+      if (!snap.exists()) {
+        document.getElementById('error').textContent = 'Team not found in database.';
+        return;
+      }
+
+      const team = snap.data();
+      currentMembers = team.members || [];
+
+      const me = currentMembers.find(
+        m => m.name.trim().toLowerCase() === (myName || '').trim().toLowerCase()
+      );
+      isCurrentUserLead = !!(me && me.isAdmin);
+
+      document.getElementById('teamNameLabel').textContent = team.name;
+      document.getElementById('teamNumberLabel').textContent = `Team number: ${team.number}`;
+
+      renderRoster();
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('error').textContent = 'Error loading team: ' + err.message;
+    }
+  }
+
+  function renderRoster() {
+    const list = document.getElementById('rosterList');
+
+    if (currentMembers.length === 0) {
+      list.innerHTML = '<div class="member-row">No members yet.</div>';
+      return;
+    }
+
+    list.innerHTML = currentMembers.map((m, i) => `
+      <div class="member-row">
+        <span class="member-name">
+          ${escapeHtml(m.name)}
+          ${m.isAdmin ? '<span class="admin-badge">TEAM LEAD</span>' : ''}
+        </span>
+        ${roleControlHtml(m, i)}
+      </div>
+    `).join('');
+
+    if (isCurrentUserLead) {
+      currentMembers.forEach((m, i) => {
+        const select = document.getElementById(`roleSelect-${i}`);
+        if (select) {
+          select.addEventListener('change', () => setRole(i, select.value));
+        }
+      });
+    }
+  }
+
+  function roleControlHtml(m, i) {
+    if (isCurrentUserLead) {
+      const options = ['<option value="">No role</option>']
+        .concat(ROLES.map(r => `<option value="${r}" ${m.role === r ? 'selected' : ''}>${r}</option>`))
+        .join('');
+      return `<select class="role-select" id="roleSelect-${i}">${options}</select>`;
+    }
+    return m.role ? `<span class="role-badge">${escapeHtml(m.role)}</span>` : '';
+  }
+
+  async function setRole(index, newRole) {
+    currentMembers[index] = { ...currentMembers[index], role: newRole || null };
+    try {
+      await updateDoc(teamRef, { members: currentMembers });
+    } catch (err) {
+      console.error(err);
+      document.getElementById('error').textContent = 'Could not save role: ' + err.message;
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str ?? '';
+    return div.innerHTML;
+  }
+</script>
+
+</body>
+</html>
