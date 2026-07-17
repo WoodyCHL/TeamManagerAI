@@ -22,27 +22,21 @@
     font-size: 20px;
   }
 
-  .tabs {
-    display: flex;
-    margin-bottom: 20px;
-    border: 1px solid #d7e1e9;
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .tabs button {
-    flex: 1;
-    padding: 8px;
-    background: #fff;
-    border: none;
-    cursor: pointer;
+  .switch-link {
+    margin-top: 16px;
+    font-size: 13px;
     color: #4a5f74;
+    text-align: center;
   }
 
-  .tabs button.active {
+  .switch-link a {
+    color: #ff7a3d;
     font-weight: bold;
-    background: #0e2438;
-    color: #eef3f7;
+    text-decoration: none;
+  }
+
+  .switch-link a:hover {
+    text-decoration: underline;
   }
 
   label {
@@ -88,12 +82,22 @@
 
 <h1>title</h1>
 
-<div class="tabs">
-  <button id="tabCreate" class="active" onclick="showForm('create')">Create team</button>
-  <button id="tabJoin" onclick="showForm('join')">Join / Sign in</button>
+<div id="joinForm">
+  <label for="joinNumber">Team number</label>
+  <input id="joinNumber">
+
+  <label for="joinPassword">Password</label>
+  <input id="joinPassword" type="password">
+
+  <label for="memberName">Your name</label>
+  <input id="memberName">
+
+  <button class="submit" id="joinBtn" onclick="joinTeam()">Join / Sign in</button>
+
+  <div class="switch-link">New team? <a href="#" onclick="showForm('create'); return false;">Create team now</a></div>
 </div>
 
-<div id="createForm">
+<div id="createForm" style="display:none;">
   <label for="teamName">Team name</label>
   <input id="teamName">
 
@@ -107,19 +111,8 @@
   <input id="adminName">
 
   <button class="submit" id="createBtn" onclick="createTeam()">Create team</button>
-</div>
 
-<div id="joinForm" style="display:none;">
-  <label for="joinNumber">Team number</label>
-  <input id="joinNumber">
-
-  <label for="joinPassword">Password</label>
-  <input id="joinPassword" type="password">
-
-  <label for="memberName">Your name</label>
-  <input id="memberName">
-
-  <button class="submit" id="joinBtn" onclick="joinTeam()">Join / Sign in</button>
+  <div class="switch-link">Already have a team? <a href="#" onclick="showForm('join'); return false;">Sign in</a></div>
 </div>
 
 <div id="error"></div>
@@ -145,8 +138,6 @@
   const teamsRef = collection(db, "teams");
 
   window.showForm = function(which) {
-    document.getElementById('tabCreate').classList.toggle('active', which === 'create');
-    document.getElementById('tabJoin').classList.toggle('active', which === 'join');
     document.getElementById('createForm').style.display = which === 'create' ? 'block' : 'none';
     document.getElementById('joinForm').style.display = which === 'join' ? 'block' : 'none';
     document.getElementById('error').textContent = '';
