@@ -20,8 +20,16 @@
 
   h1 {
     font-size: 22px;
-    margin-bottom: 20px;
+    margin-bottom: 4px;
     letter-spacing: -0.01em;
+  }
+
+  .step-label {
+    font-size: 12px;
+    color: #8a99a8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 20px;
   }
 
   .card {
@@ -120,6 +128,7 @@
     border-radius: 3px;
     font-weight: bold;
     cursor: pointer;
+    width: 100%;
   }
 
   button.submit:disabled {
@@ -137,27 +146,25 @@
 <body>
 
 <h1>title</h1>
+<div class="step-label">Step 1 of 2 — Team login</div>
 
 <div class="card">
 
 <div id="joinForm">
-  <label for="joinNumber">Team number</label>
-  <input id="joinNumber">
+  <label for="joinTeamName">Team name</label>
+  <input id="joinTeamName">
 
-  <label for="joinPassword">Password</label>
+  <label for="joinPassword">Team password</label>
   <input id="joinPassword" type="password">
 
-  <label for="memberName">Your name</label>
-  <input id="memberName">
-
-  <button class="submit" id="joinBtn" onclick="joinTeam()">Join / Sign in</button>
+  <button class="submit" id="joinBtn" onclick="signInTeam()">Continue</button>
 
   <div class="switch-link">New team? <a href="#" onclick="showForm('create'); return false;">Create team now</a></div>
 </div>
 
 <div id="createForm" style="display:none;">
   <div class="notice">
-    Only the team lead should create a new team. If you're joining an existing team, use "Sign in" instead.
+    Only the team lead should create a new team. If you're joining an existing team, use "Sign in" instead. Team names must be unique — pick something specific to your team.
   </div>
 
   <label for="teamName">Team name</label>
@@ -166,11 +173,8 @@
   <label for="teamNumber">Team number</label>
   <input id="teamNumber">
 
-  <label for="teamPassword">Set a password</label>
+  <label for="teamPassword">Set a team password</label>
   <input id="teamPassword" type="password">
-
-  <label for="adminName">Your name</label>
-  <input id="adminName">
 
   <label class="checkbox-row">
     <input type="checkbox" id="confirmLead">
@@ -189,8 +193,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
-    getFirestore, collection, query, where, getDocs,
-    addDoc, updateDoc, arrayUnion
+    getFirestore, collection, query, where, getDocs, addDoc
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -226,10 +229,9 @@
     const name = document.getElementById('teamName').value.trim();
     const number = document.getElementById('teamNumber').value.trim();
     const password = document.getElementById('teamPassword').value;
-    const adminName = document.getElementById('adminName').value.trim();
     const confirmed = document.getElementById('confirmLead').checked;
 
-    if (!name || !number || !password || !adminName) {
+    if (!name || !number || !password) {
       showError('Fill in all fields.');
       return;
     }
@@ -241,23 +243,24 @@
 
     setLoading('createBtn', true, 'Create team');
     try {
-      // check the team number isn't already taken
-      const existing = await getDocs(query(teamsRef, where('number', '==', number)));
+      // team names must be unique (case-insensitive check)
+      const existing = await getDocs(query(teamsRef, where('nameLower', '==', name.toLowerCase())));
       if (!existing.empty) {
-        showError('That team number is already taken.');
+        showError('That team name is already taken — pick something more specific.');
         return;
       }
 
       const docRef = await addDoc(teamsRef, {
         name,
+        nameLower: name.toLowerCase(),
         number,
         password,
-        members: [{ name: adminName, isAdmin: true, role: null }]
+        members: [],
+        tasks: [],
+        notes: []
       });
 
-      localStorage.setItem('teamId', docRef.id);
-      localStorage.setItem('memberName', adminName);
-      window.location.href = 'Yr10T3Dashboard.html';
+      window.location.href = `login-member.html?team=${encodeURIComponent(number)}`;
 
     } catch (err) {
       console.error(err);
@@ -267,21 +270,20 @@
     }
   };
 
-  window.joinTeam = async function() {
-    const number = document.getElementById('joinNumber').value.trim();
+  window.signInTeam = async function() {
+    const name = document.getElementById('joinTeamName').value.trim();
     const password = document.getElementById('joinPassword').value;
-    const memberName = document.getElementById('memberName').value.trim();
 
-    if (!number || !password || !memberName) {
+    if (!name || !password) {
       showError('Fill in all fields.');
       return;
     }
 
-    setLoading('joinBtn', true, 'Join / Sign in');
+    setLoading('joinBtn', true, 'Continue');
     try {
-      const found = await getDocs(query(teamsRef, where('number', '==', number)));
+      const found = await getDocs(query(teamsRef, where('nameLower', '==', name.toLowerCase())));
       if (found.empty) {
-        showError('Team number not found.');
+        showError('Team not found.');
         return;
       }
 
@@ -293,29 +295,13 @@
         return;
       }
 
-      // Check if this name already belongs to someone on the team —
-      // if so, sign back in as them instead of creating a duplicate.
-      const members = teamData.members || [];
-      const existing = members.find(
-        m => m.name.trim().toLowerCase() === memberName.toLowerCase()
-      );
-
-      if (!existing) {
-        await updateDoc(teamDoc.ref, {
-          members: arrayUnion({ name: memberName, isAdmin: false, role: null })
-        });
-      }
-      // if existing, do nothing to the database — just sign them in below
-
-      localStorage.setItem('teamId', teamDoc.id);
-      localStorage.setItem('memberName', existing ? existing.name : memberName);
-      window.location.href = 'Yr10T3Dashboard.html';
+      window.location.href = `login-member.html?team=${encodeURIComponent(teamData.number)}`;
 
     } catch (err) {
       console.error(err);
       showError('Something went wrong: ' + err.message);
     } finally {
-      setLoading('joinBtn', false, 'Join / Sign in');
+      setLoading('joinBtn', false, 'Continue');
     }
   };
 </script>
