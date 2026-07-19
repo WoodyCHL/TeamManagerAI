@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>title</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 420px;
+    margin: 60px auto;
+    background: #eef3f7;
+    background-image:
+      linear-gradient(rgba(14, 36, 56, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(14, 36, 56, 0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-attachment: fixed;
+    color: #0e2438;
+    padding: 24px;
+  }
+
+  h1 {
+    font-size: 22px;
+    margin-bottom: 4px;
+    letter-spacing: -0.01em;
+  }
+
+  .step-label {
+    font-size: 12px;
+    color: #8a99a8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+  }
+
+  .team-context {
+    font-size: 13px;
+    color: #4a5f74;
+    margin-bottom: 20px;
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid #d7e1e9;
+    border-radius: 8px;
+    padding: 28px;
+    box-shadow: 0 2px 10px rgba(14, 36, 56, 0.06);
+  }
+
+  .notice {
+    background: #fff6ee;
+    border: 1px solid #ffd9bd;
+    border-left: 4px solid #ff7a3d;
+    padding: 12px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #8a4318;
+    margin-bottom: 20px;
+  }
+
+  .switch-link {
+    margin-top: 20px;
+    font-size: 13px;
+    color: #4a5f74;
+    text-align: center;
+  }
+
+  .switch-link a {
+    color: #ff7a3d;
+    font-weight: bold;
+    text-decoration: none;
+  }
+
+  .switch-link a:hover {
+    text-decoration: underline;
+  }
+
+  label {
+    display: block;
+    margin-top: 14px;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #6b7f92;
+  }
+
+  label:first-of-type {
+    margin-top: 0;
+  }
+
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    margin-top: 6px;
+    border: 1px solid #d7e1e9;
+    border-radius: 6px;
+    background: #f8fafb;
+    font-size: 14px;
+    color: #0e2438;
+    box-sizing: border-box;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  input:focus {
+    outline: none;
+    border-color: #ff7a3d;
+    background: #fff;
+  }
+
+  button.submit {
+    margin-top: 16px;
+    padding: 8px 16px;
+    background: #ff7a3d;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    font-weight: bold;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  button.submit:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  #error {
+    color: #c23b3b;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<h1>title</h1>
+<div class="step-label">Step 2 of 2 — Personal login</div>
+<div class="team-context" id="teamContext">Loading team…</div>
+
+<div class="card">
+
+<div id="signinForm">
+  <label for="signinName">Your name</label>
+  <input id="signinName">
+
+  <label for="signinPassword">Your password</label>
+  <input id="signinPassword" type="password">
+
+  <button class="submit" id="signinBtn" onclick="signInMember()">Sign in</button>
+
+  <div class="switch-link">First time on this team? <a href="#" onclick="showForm('register'); return false;">Register</a></div>
+</div>
+
+<div id="registerForm" style="display:none;">
+  <div class="notice">
+    Choose a name that isn't already used by someone else on this team, and set a password only you know.
+  </div>
+
+  <label for="regName">Your name</label>
+  <input id="regName">
+
+  <label for="regPassword">Set a password</label>
+  <input id="regPassword" type="password">
+
+  <button class="submit" id="registerBtn" onclick="registerMember()">Register</button>
+
+  <div class="switch-link">Already registered? <a href="#" onclick="showForm('signin'); return false;">Sign in</a></div>
+</div>
+
+<div id="error"></div>
+
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getFirestore, collection, query, where, getDocs, updateDoc
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBeEGjkfjNGK0ftzvxLhqc4oZ3ZT35_5vc",
+    authDomain: "yr10digital.firebaseapp.com",
+    projectId: "yr10digital",
+    storageBucket: "yr10digital.firebasestorage.app",
+    messagingSenderId: "485437103519",
+    appId: "1:485437103519:web:f1174f549f5a2f811df1aa"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const teamsRef = collection(db, "teams");
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const teamNumber = urlParams.get('team');
+
+  let teamDoc = null;
+  let teamData = null;
+
+  if (!teamNumber) {
+    document.getElementById('teamContext').textContent = 'No team specified — go back and sign in first.';
+    document.getElementById('error').textContent = 'Missing team reference.';
+  } else {
+    loadTeam();
+  }
+
+  async function loadTeam() {
+    try {
+      const found = await getDocs(query(teamsRef, where('number', '==', teamNumber)));
+      if (found.empty) {
+        document.getElementById('teamContext').textContent = 'Team not found.';
+        return;
+      }
+
+      teamDoc = found.docs[0];
+      teamData = teamDoc.data();
+
+      document.getElementById('teamContext').textContent = `Team: ${teamData.name} (#${teamData.number})`;
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('teamContext').textContent = 'Error loading team.';
+    }
+  }
+
+  window.showForm = function(which) {
+    document.getElementById('signinForm').style.display = which === 'signin' ? 'block' : 'none';
+    document.getElementById('registerForm').style.display = which === 'register' ? 'block' : 'none';
+    document.getElementById('error').textContent = '';
+  };
+
+  function showError(msg) {
+    document.getElementById('error').textContent = msg;
+  }
+
+  function setLoading(btnId, loading, label) {
+    const btn = document.getElementById(btnId);
+    btn.disabled = loading;
+    btn.textContent = loading ? 'Please wait…' : label;
+  }
+
+  window.signInMember = async function() {
+    const name = document.getElementById('signinName').value.trim();
+    const password = document.getElementById('signinPassword').value;
+
+    if (!name || !password) {
+      showError('Fill in both fields.');
+      return;
+    }
+
+    if (!teamDoc) {
+      showError('Team not loaded yet — try again in a moment.');
+      return;
+    }
+
+    setLoading('signinBtn', true, 'Sign in');
+    try {
+      const members = teamData.members || [];
+      const match = members.find(
+        m => m.name.trim().toLowerCase() === name.toLowerCase()
+      );
+
+      if (!match) {
+        showError('No member with that name on this team. Try registering instead.');
+        return;
+      }
+
+      if (match.password !== password) {
+        showError('Incorrect password.');
+        return;
+      }
+
+      localStorage.setItem('teamId', teamDoc.id);
+      localStorage.setItem('memberName', match.name);
+      window.location.href = 'Yr10T3Dashboard.html';
+
+    } catch (err) {
+      console.error(err);
+      showError('Something went wrong: ' + err.message);
+    } finally {
+      setLoading('signinBtn', false, 'Sign in');
+    }
+  };
+
+  window.registerMember = async function() {
+    const name = document.getElementById('regName').value.trim();
+    const password = document.getElementById('regPassword').value;
+
+    if (!name || !password) {
+      showError('Fill in both fields.');
+      return;
+    }
+
+    if (!teamDoc) {
+      showError('Team not loaded yet — try again in a moment.');
+      return;
+    }
+
+    setLoading('registerBtn', true, 'Register');
+    try {
+      const members = teamData.members || [];
+
+      const taken = members.find(
+        m => m.name.trim().toLowerCase() === name.toLowerCase()
+      );
+      if (taken) {
+        showError('That name is already used on this team — pick another, or sign in if it\'s you.');
+        return;
+      }
+
+      const isFirstMember = members.length === 0;
+
+      const newMember = {
+        name,
+        password,
+        isAdmin: isFirstMember,
+        role: null
+      };
+
+      const updatedMembers = [...members, newMember];
+      await updateDoc(teamDoc.ref, { members: updatedMembers });
+
+      localStorage.setItem('teamId', teamDoc.id);
+      localStorage.setItem('memberName', name);
+      window.location.href = 'Yr10T3Dashboard.html';
+
+    } catch (err) {
+      console.error(err);
+      showError('Something went wrong: ' + err.message);
+    } finally {
+      setLoading('registerBtn', false, 'Register');
+    }
+  };
+</script>
+
+</body>
+</html>
