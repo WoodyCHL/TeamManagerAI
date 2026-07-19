@@ -337,21 +337,112 @@
     border-color: #ff7a3d;
   }
 
-  /* meeting notes */
-  .note {
+  /* meeting notes — page list */
+  .note-page-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 10px;
     border-bottom: 1px solid #eef3f7;
-    padding: 10px 0;
-    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
   }
 
-  .note:last-child {
+  .note-page-row:hover {
+    background: #f8fafb;
+  }
+
+  .note-page-row:last-child {
     border-bottom: none;
   }
 
-  .note-meta {
+  .note-page-title {
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .note-page-meta {
     font-size: 11px;
     color: #8a99a8;
-    margin-top: 4px;
+  }
+
+  /* meeting notes — editor */
+  .note-title-input {
+    font-size: 20px;
+    font-weight: bold;
+    border: none;
+    padding: 8px 0;
+    margin-top: 8px;
+    background: transparent;
+  }
+
+  .note-title-input:focus {
+    border: none;
+    outline: none;
+  }
+
+  .editor-toolbar {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eef3f7;
+    margin-bottom: 12px;
+  }
+
+  .tb-btn {
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    background: #f8fafb;
+    border: 1px solid #d7e1e9;
+    border-radius: 6px;
+    padding: 5px 10px;
+    cursor: pointer;
+    color: #0e2438;
+  }
+
+  .tb-btn:hover {
+    background: #eef3f7;
+  }
+
+  .note-body-editor {
+    min-height: 220px;
+    font-size: 14px;
+    line-height: 1.6;
+    outline: none;
+  }
+
+  .note-body-editor h3 {
+    font-size: 16px;
+    margin: 14px 0 6px;
+  }
+
+  .note-body-editor ul {
+    padding-left: 22px;
+  }
+
+  .note-body-editor .checklist-item {
+    list-style: none;
+    margin-left: -22px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .note-body-editor .checklist-item input {
+    width: auto;
+    margin-top: 3px;
+  }
+
+  .note-save-status {
+    font-size: 11px;
+    color: #8a99a8;
+    margin-top: 12px;
+    text-align: right;
   }
 
   #error {
@@ -440,14 +531,38 @@
 
 <!-- MEETING NOTES -->
 <div class="panel" id="panel-notes">
-  <div class="panel-head">
-    <h2>Meeting notes</h2>
+
+  <!-- LIST VIEW -->
+  <div id="notesListView">
+    <div class="panel-head">
+      <h2>Meeting notes</h2>
+      <button class="btn btn-primary" onclick="createNotePage()">+ New note</button>
+    </div>
+    <div id="notesPageList"></div>
   </div>
 
-  <textarea id="newNoteText" placeholder="Add a note from today's meeting…"></textarea>
-  <button class="btn btn-primary" style="margin-top:10px;" onclick="addNote()">Add note</button>
+  <!-- EDITOR VIEW -->
+  <div id="notesEditorView" style="display:none;">
+    <div class="panel-head">
+      <button class="btn btn-secondary" onclick="closeNoteEditor()">&larr; Back</button>
+      <button class="btn btn-danger" id="deleteNoteBtn" onclick="deleteCurrentNote()">Delete</button>
+    </div>
 
-  <div id="notesList" style="margin-top: 16px;"></div>
+    <input id="noteTitleInput" class="note-title-input" placeholder="Untitled note" oninput="scheduleNoteSave()">
+
+    <div class="editor-toolbar">
+      <button type="button" class="tb-btn" onclick="formatDoc('bold')"><b>B</b></button>
+      <button type="button" class="tb-btn" onclick="formatDoc('italic')"><i>I</i></button>
+      <button type="button" class="tb-btn" onclick="formatDoc('formatBlock', 'H3')">H</button>
+      <button type="button" class="tb-btn" onclick="formatDoc('insertUnorderedList')">&bull; List</button>
+      <button type="button" class="tb-btn" onclick="insertChecklistItem()">&#9744; Check</button>
+    </div>
+
+    <div id="noteBodyEditor" class="note-body-editor" contenteditable="true" oninput="scheduleNoteSave()"></div>
+
+    <div class="note-save-status" id="noteSaveStatus"></div>
+  </div>
+
 </div>
 
 <div id="error"></div>
@@ -743,41 +858,115 @@
     document.getElementById('aiDescription').value = '';
   };
 
-  // ---------------- MEETING NOTES ----------------
+  // ---------------- MEETING NOTES (page-based) ----------------
+
+  let currentNoteId = null;
+  let noteSaveTimer = null;
 
   function renderNotes() {
-    const list = document.getElementById('notesList');
+    const list = document.getElementById('notesPageList');
 
     if (currentNotes.length === 0) {
-      list.innerHTML = '<div class="empty-state">No notes yet.</div>';
+      list.innerHTML = '<div class="empty-state">No notes yet. Create your first one.</div>';
       return;
     }
 
-    const sorted = [...currentNotes].sort((a, b) => b.createdAt - a.createdAt);
+    const sorted = [...currentNotes].sort((a, b) => b.updatedAt - a.updatedAt);
 
     list.innerHTML = sorted.map(n => `
-      <div class="note">
-        <div>${escapeHtml(n.text)}</div>
-        <div class="note-meta">${escapeHtml(n.author)} · ${new Date(n.createdAt).toLocaleString()}</div>
+      <div class="note-page-row" onclick="openNotePage('${n.id}')">
+        <span class="note-page-title">📄 ${escapeHtml(n.title || 'Untitled note')}</span>
+        <span class="note-page-meta">${escapeHtml(n.author)} · ${new Date(n.updatedAt).toLocaleDateString()}</span>
       </div>
     `).join('');
   }
 
-  window.addNote = async function() {
-    const textEl = document.getElementById('newNoteText');
-    const text = textEl.value.trim();
-    if (!text) return;
-
+  window.createNotePage = async function() {
     const newNote = {
-      text,
+      id: Date.now().toString(),
+      title: '',
+      body: '',
       author: myName || 'Unknown',
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     };
 
     currentNotes = [...currentNotes, newNote];
     await saveTeamField({ notes: currentNotes });
     renderNotes();
-    textEl.value = '';
+    openNotePage(newNote.id);
+  };
+
+  window.openNotePage = function(id) {
+    const note = currentNotes.find(n => n.id === id);
+    if (!note) return;
+
+    currentNoteId = id;
+    document.getElementById('noteTitleInput').value = note.title || '';
+    document.getElementById('noteBodyEditor').innerHTML = note.body || '';
+    document.getElementById('noteSaveStatus').textContent = '';
+
+    document.getElementById('notesListView').style.display = 'none';
+    document.getElementById('notesEditorView').style.display = 'block';
+  };
+
+  window.closeNoteEditor = function() {
+    currentNoteId = null;
+    document.getElementById('notesEditorView').style.display = 'none';
+    document.getElementById('notesListView').style.display = 'block';
+    renderNotes();
+  };
+
+  window.scheduleNoteSave = function() {
+    document.getElementById('noteSaveStatus').textContent = 'Saving…';
+    clearTimeout(noteSaveTimer);
+    noteSaveTimer = setTimeout(saveCurrentNote, 600);
+  };
+
+  async function saveCurrentNote() {
+    if (!currentNoteId) return;
+
+    const title = document.getElementById('noteTitleInput').value.trim();
+    const body = document.getElementById('noteBodyEditor').innerHTML;
+
+    currentNotes = currentNotes.map(n =>
+      n.id === currentNoteId ? { ...n, title, body, updatedAt: Date.now() } : n
+    );
+
+    await saveTeamField({ notes: currentNotes });
+    document.getElementById('noteSaveStatus').textContent = 'Saved';
+  }
+
+  window.deleteCurrentNote = async function() {
+    if (!currentNoteId) return;
+    if (!confirm('Delete this note? This can\'t be undone.')) return;
+
+    currentNotes = currentNotes.filter(n => n.id !== currentNoteId);
+    await saveTeamField({ notes: currentNotes });
+    closeNoteEditor();
+  };
+
+  window.formatDoc = function(command, value) {
+    document.getElementById('noteBodyEditor').focus();
+    document.execCommand(command, false, value || null);
+    scheduleNoteSave();
+  };
+
+  window.insertChecklistItem = function() {
+    const editor = document.getElementById('noteBodyEditor');
+    editor.focus();
+
+    const li = document.createElement('li');
+    li.className = 'checklist-item';
+    li.innerHTML = `<input type="checkbox"> <span contenteditable="true">New item</span>`;
+
+    const ul = document.createElement('ul');
+    ul.style.listStyle = 'none';
+    ul.style.padding = '0';
+    ul.appendChild(li);
+
+    document.execCommand('insertHTML', false, ul.outerHTML);
+    scheduleNoteSave();
   };
 
   function escapeHtml(str) {
