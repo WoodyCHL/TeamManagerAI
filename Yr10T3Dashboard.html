@@ -409,6 +409,15 @@
     outline: none;
   }
 
+  .note-subsystem-select {
+    width: auto;
+    font-size: 12px;
+    padding: 5px 8px;
+    margin-top: 0;
+    margin-bottom: 8px;
+    color: #4a5f74;
+  }
+
   .editor-toolbar {
     display: flex;
     gap: 6px;
@@ -577,6 +586,15 @@
     </div>
 
     <input id="noteTitleInput" class="note-title-input" placeholder="Untitled note" oninput="scheduleNoteSave()">
+
+    <select id="noteSubsystemSelect" class="note-subsystem-select" onchange="scheduleNoteSave()">
+      <option value="">No subsystem tag</option>
+      <option value="drivetrain">Drivetrain</option>
+      <option value="arm">Arm</option>
+      <option value="sensors">Sensors</option>
+      <option value="programming">Programming</option>
+      <option value="testing">Testing</option>
+    </select>
 
     <div class="editor-toolbar">
       <button type="button" class="tb-btn" onclick="formatDoc('bold')"><b>B</b></button>
@@ -908,9 +926,10 @@
       <div class="note-page-row">
         <span class="note-page-title" onclick="openNotePage('${n.id}')">
           ${n.pinned ? '📌' : '📄'} ${escapeHtml(n.title || 'Untitled note')}
+          ${n.subsystem ? `<span class="subsystem-badge">${escapeHtml(n.subsystem)}</span>` : ''}
         </span>
         <span class="note-page-right">
-          <span class="note-page-meta">${escapeHtml(n.author)} · ${new Date(n.updatedAt).toLocaleDateString()}</span>
+          <span class="note-page-meta">Edited by ${escapeHtml(n.lastEditedBy || n.author)} · ${new Date(n.updatedAt).toLocaleDateString()}</span>
           <button class="pin-toggle-btn ${n.pinned ? 'pinned' : ''}" onclick="event.stopPropagation(); toggleNotePin('${n.id}')" title="${n.pinned ? 'Unpin' : 'Pin to top'}">★</button>
         </span>
       </div>
@@ -930,7 +949,9 @@
       id: Date.now().toString(),
       title: '',
       body: '',
+      subsystem: '',
       author: myName || 'Unknown',
+      lastEditedBy: myName || 'Unknown',
       pinned: false,
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -949,6 +970,7 @@
     currentNoteId = id;
     document.getElementById('noteTitleInput').value = note.title || '';
     document.getElementById('noteBodyEditor').innerHTML = note.body || '';
+    document.getElementById('noteSubsystemSelect').value = note.subsystem || '';
     document.getElementById('noteSaveStatus').textContent = '';
 
     const pinBtn = document.getElementById('editorPinBtn');
@@ -986,9 +1008,12 @@
 
     const title = document.getElementById('noteTitleInput').value.trim();
     const body = document.getElementById('noteBodyEditor').innerHTML;
+    const subsystem = document.getElementById('noteSubsystemSelect').value;
 
     currentNotes = currentNotes.map(n =>
-      n.id === currentNoteId ? { ...n, title, body, updatedAt: Date.now() } : n
+      n.id === currentNoteId
+        ? { ...n, title, body, subsystem, lastEditedBy: myName || 'Unknown', updatedAt: Date.now() }
+        : n
     );
 
     await saveTeamField({ notes: currentNotes });
