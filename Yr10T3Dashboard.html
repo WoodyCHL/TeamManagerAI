@@ -702,7 +702,7 @@
       isCurrentUserLead = !!(me && me.isAdmin);
 
       document.getElementById('teamNameLabel').textContent = team.name;
-      document.getElementById('teamNumberLabel').textContent = `Team number: ${team.number}`;
+      document.getElementById('teamNumberLabel').textContent = '';
 
       if (isCurrentUserLead) {
         document.getElementById('createTaskBtn').style.display = 'inline-block';
