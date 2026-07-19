@@ -170,9 +170,6 @@
   <label for="teamName">Team name</label>
   <input id="teamName">
 
-  <label for="teamNumber">Team number</label>
-  <input id="teamNumber">
-
   <label for="teamPassword">Set a team password</label>
   <input id="teamPassword" type="password">
 
@@ -227,11 +224,10 @@
 
   window.createTeam = async function() {
     const name = document.getElementById('teamName').value.trim();
-    const number = document.getElementById('teamNumber').value.trim();
     const password = document.getElementById('teamPassword').value;
     const confirmed = document.getElementById('confirmLead').checked;
 
-    if (!name || !number || !password) {
+    if (!name || !password) {
       showError('Fill in all fields.');
       return;
     }
@@ -253,14 +249,13 @@
       const docRef = await addDoc(teamsRef, {
         name,
         nameLower: name.toLowerCase(),
-        number,
         password,
         members: [],
         tasks: [],
         notes: []
       });
 
-      window.location.href = `login-member.html?team=${encodeURIComponent(number)}`;
+      window.location.href = `login-member.html?team=${docRef.id}`;
 
     } catch (err) {
       console.error(err);
@@ -295,7 +290,7 @@
         return;
       }
 
-      window.location.href = `login-member.html?team=${encodeURIComponent(teamData.number)}`;
+      window.location.href = `login-member.html?team=${teamDoc.id}`;
 
     } catch (err) {
       console.error(err);
