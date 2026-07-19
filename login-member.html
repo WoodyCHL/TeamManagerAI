@@ -175,7 +175,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
-    getFirestore, collection, query, where, getDocs, updateDoc
+    getFirestore, doc, getDoc, updateDoc
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -189,15 +189,14 @@
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
-  const teamsRef = collection(db, "teams");
 
   const urlParams = new URLSearchParams(window.location.search);
-  const teamNumber = urlParams.get('team');
+  const teamId = urlParams.get('team');
 
-  let teamDoc = null;
+  let teamRef = null;
   let teamData = null;
 
-  if (!teamNumber) {
+  if (!teamId) {
     document.getElementById('teamContext').textContent = 'No team specified — go back and sign in first.';
     document.getElementById('error').textContent = 'Missing team reference.';
   } else {
@@ -206,16 +205,16 @@
 
   async function loadTeam() {
     try {
-      const found = await getDocs(query(teamsRef, where('number', '==', teamNumber)));
-      if (found.empty) {
+      teamRef = doc(db, "teams", teamId);
+      const snap = await getDoc(teamRef);
+
+      if (!snap.exists()) {
         document.getElementById('teamContext').textContent = 'Team not found.';
         return;
       }
 
-      teamDoc = found.docs[0];
-      teamData = teamDoc.data();
-
-      document.getElementById('teamContext').textContent = `Team: ${teamData.name} (#${teamData.number})`;
+      teamData = snap.data();
+      document.getElementById('teamContext').textContent = `Team: ${teamData.name}`;
 
     } catch (err) {
       console.error(err);
@@ -248,7 +247,7 @@
       return;
     }
 
-    if (!teamDoc) {
+    if (!teamRef) {
       showError('Team not loaded yet — try again in a moment.');
       return;
     }
@@ -270,7 +269,7 @@
         return;
       }
 
-      localStorage.setItem('teamId', teamDoc.id);
+      localStorage.setItem('teamId', teamId);
       localStorage.setItem('memberName', match.name);
       window.location.href = 'Yr10T3Dashboard.html';
 
@@ -291,7 +290,7 @@
       return;
     }
 
-    if (!teamDoc) {
+    if (!teamRef) {
       showError('Team not loaded yet — try again in a moment.');
       return;
     }
@@ -318,9 +317,9 @@
       };
 
       const updatedMembers = [...members, newMember];
-      await updateDoc(teamDoc.ref, { members: updatedMembers });
+      await updateDoc(teamRef, { members: updatedMembers });
 
-      localStorage.setItem('teamId', teamDoc.id);
+      localStorage.setItem('teamId', teamId);
       localStorage.setItem('memberName', name);
       window.location.href = 'Yr10T3Dashboard.html';
 
