@@ -369,6 +369,31 @@
     color: #8a99a8;
   }
 
+  .note-page-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .pin-toggle-btn {
+    background: none;
+    border: none;
+    font-size: 16px;
+    color: #d7e1e9;
+    cursor: pointer;
+    padding: 2px 4px;
+    line-height: 1;
+  }
+
+  .pin-toggle-btn:hover {
+    color: #ffb08a;
+  }
+
+  .pin-toggle-btn.pinned {
+    color: #ff7a3d;
+  }
+
   /* meeting notes — editor */
   .note-title-input {
     font-size: 20px;
@@ -545,7 +570,10 @@
   <div id="notesEditorView" style="display:none;">
     <div class="panel-head">
       <button class="btn btn-secondary" onclick="closeNoteEditor()">&larr; Back</button>
-      <button class="btn btn-danger" id="deleteNoteBtn" onclick="deleteCurrentNote()">Delete</button>
+      <span>
+        <button class="pin-toggle-btn" id="editorPinBtn" onclick="toggleCurrentNotePin()" title="Pin to top">★</button>
+        <button class="btn btn-danger" id="deleteNoteBtn" onclick="deleteCurrentNote()">Delete</button>
+      </span>
     </div>
 
     <input id="noteTitleInput" class="note-title-input" placeholder="Untitled note" oninput="scheduleNoteSave()">
@@ -871,15 +899,31 @@
       return;
     }
 
-    const sorted = [...currentNotes].sort((a, b) => b.updatedAt - a.updatedAt);
+    const sorted = [...currentNotes].sort((a, b) => {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+      return b.updatedAt - a.updatedAt;
+    });
 
     list.innerHTML = sorted.map(n => `
-      <div class="note-page-row" onclick="openNotePage('${n.id}')">
-        <span class="note-page-title">📄 ${escapeHtml(n.title || 'Untitled note')}</span>
-        <span class="note-page-meta">${escapeHtml(n.author)} · ${new Date(n.updatedAt).toLocaleDateString()}</span>
+      <div class="note-page-row">
+        <span class="note-page-title" onclick="openNotePage('${n.id}')">
+          ${n.pinned ? '📌' : '📄'} ${escapeHtml(n.title || 'Untitled note')}
+        </span>
+        <span class="note-page-right">
+          <span class="note-page-meta">${escapeHtml(n.author)} · ${new Date(n.updatedAt).toLocaleDateString()}</span>
+          <button class="pin-toggle-btn ${n.pinned ? 'pinned' : ''}" onclick="event.stopPropagation(); toggleNotePin('${n.id}')" title="${n.pinned ? 'Unpin' : 'Pin to top'}">★</button>
+        </span>
       </div>
     `).join('');
   }
+
+  window.toggleNotePin = async function(id) {
+    currentNotes = currentNotes.map(n =>
+      n.id === id ? { ...n, pinned: !n.pinned } : n
+    );
+    await saveTeamField({ notes: currentNotes });
+    renderNotes();
+  };
 
   window.createNotePage = async function() {
     const newNote = {
@@ -887,6 +931,7 @@
       title: '',
       body: '',
       author: myName || 'Unknown',
+      pinned: false,
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -906,8 +951,21 @@
     document.getElementById('noteBodyEditor').innerHTML = note.body || '';
     document.getElementById('noteSaveStatus').textContent = '';
 
+    const pinBtn = document.getElementById('editorPinBtn');
+    pinBtn.classList.toggle('pinned', !!note.pinned);
+    pinBtn.title = note.pinned ? 'Unpin' : 'Pin to top';
+
     document.getElementById('notesListView').style.display = 'none';
     document.getElementById('notesEditorView').style.display = 'block';
+  };
+
+  window.toggleCurrentNotePin = async function() {
+    if (!currentNoteId) return;
+    await toggleNotePin(currentNoteId);
+    const note = currentNotes.find(n => n.id === currentNoteId);
+    const pinBtn = document.getElementById('editorPinBtn');
+    pinBtn.classList.toggle('pinned', !!note.pinned);
+    pinBtn.title = note.pinned ? 'Unpin' : 'Pin to top';
   };
 
   window.closeNoteEditor = function() {
