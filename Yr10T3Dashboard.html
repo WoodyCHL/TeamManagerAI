@@ -319,6 +319,36 @@
     margin-bottom: 12px;
   }
 
+  .assignee-slot-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 6px;
+  }
+
+  .assignee-slot-row:first-child {
+    margin-top: 4px;
+  }
+
+  .assignee-slot-row select {
+    margin-top: 0;
+    flex: 1;
+  }
+
+  .assignee-slot-remove {
+    background: none;
+    border: none;
+    color: #8a99a8;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+
+  .assignee-slot-remove:hover {
+    color: #c23b3b;
+  }
+
   label {
     display: block;
     margin-top: 10px;
@@ -570,8 +600,8 @@
       <label for="taskDesc">Description</label>
       <textarea id="taskDesc"></textarea>
 
-      <label for="taskAssignee">Assign to</label>
-      <select id="taskAssignee"></select>
+      <label>Assign to</label>
+      <div id="assigneeSlots"></div>
 
       <button class="btn btn-primary" id="saveTaskBtn" style="margin-top:12px;" onclick="saveTask()">Save task</button>
       <button class="btn btn-secondary" style="margin-top:12px;" onclick="toggleAiForm()">Cancel</button>
@@ -822,7 +852,11 @@
       return;
     }
 
-    list.innerHTML = currentTasks.map((t, i) => `
+    list.innerHTML = currentTasks.map((t, i) => {
+      const assignees = getTaskAssignees(t);
+      const assigneeText = assignees.length > 0 ? '→ ' + assignees.map(escapeHtml).join(', ') : 'Unassigned';
+
+      return `
       <div class="task-card">
         <div class="task-top">
           <div>
@@ -838,7 +872,7 @@
         </div>
         <div class="task-meta">
           <span class="subsystem-badge">${escapeHtml(t.subsystem || 'general')}</span>
-          <span class="assignee-tag">${t.assignedName ? '→ ' + escapeHtml(t.assignedName) : 'Unassigned'}</span>
+          <span class="assignee-tag">${assigneeText}</span>
           <select class="status-select" id="statusSelect-${i}">
             <option value="todo" ${t.status === 'todo' ? 'selected' : ''}>To do</option>
             <option value="in_progress" ${t.status === 'in_progress' ? 'selected' : ''}>In progress</option>
@@ -846,7 +880,8 @@
           </select>
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     currentTasks.forEach((t, i) => {
       const select = document.getElementById(`statusSelect-${i}`);
@@ -858,6 +893,14 @@
       const deleteBtn = document.getElementById(`deleteBtn-${i}`);
       if (deleteBtn) deleteBtn.addEventListener('click', () => deleteTask(i));
     });
+  }
+
+  // supports both the old single "assignedName" field (legacy tasks)
+  // and the new "assignedNames" array, so nothing already saved breaks
+  function getTaskAssignees(t) {
+    if (Array.isArray(t.assignedNames)) return t.assignedNames;
+    if (t.assignedName) return [t.assignedName];
+    return [];
   }
 
   async function setTaskStatus(index, newStatus) {
@@ -876,6 +919,55 @@
 
   let editingTaskIndex = null;
 
+  // ---------------- ASSIGNEE SLOTS ----------------
+
+  function memberOptionsHtml(selectedName) {
+    const options = ['<option value="">— select member —</option>']
+      .concat(currentMembers.map(m =>
+        `<option value="${escapeHtml(m.name)}" ${m.name === selectedName ? 'selected' : ''}>${escapeHtml(m.name)}${m.role ? ' (' + m.role + ')' : ''}</option>`
+      ));
+    return options.join('');
+  }
+
+  function renderAssigneeSlots(selectedNames) {
+    const container = document.getElementById('assigneeSlots');
+    const names = selectedNames.length > 0 ? selectedNames : [''];
+
+    container.innerHTML = names.map((name, i) => `
+      <div class="assignee-slot-row">
+        <select class="assignee-slot-select" data-slot="${i}">${memberOptionsHtml(name)}</select>
+        ${names.length > 1 ? `<button type="button" class="assignee-slot-remove" data-remove="${i}">&times;</button>` : ''}
+      </div>
+    `).join('');
+
+    container.querySelectorAll('.assignee-slot-select').forEach(sel => {
+      sel.addEventListener('change', onAssigneeSlotChange);
+    });
+
+    container.querySelectorAll('.assignee-slot-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.remove, 10);
+        const current = getAssigneeSlotValues();
+        current.splice(idx, 1);
+        renderAssigneeSlots(current);
+      });
+    });
+  }
+
+  function onAssigneeSlotChange() {
+    const values = getAssigneeSlotValues();
+    const lastValue = values[values.length - 1];
+
+    // if the last slot just got filled in, add a fresh empty slot after it
+    if (lastValue && lastValue !== '') {
+      renderAssigneeSlots([...values, '']);
+    }
+  }
+
+  function getAssigneeSlotValues() {
+    return Array.from(document.querySelectorAll('.assignee-slot-select')).map(s => s.value);
+  }
+
   function editTask(index) {
     editingTaskIndex = index;
     const t = currentTasks[index];
@@ -887,10 +979,7 @@
     document.getElementById('taskTitle').value = t.title || '';
     document.getElementById('taskDesc').value = t.description || '';
 
-    const assigneeSelect = document.getElementById('taskAssignee');
-    assigneeSelect.innerHTML = currentMembers
-      .map(m => `<option value="${escapeHtml(m.name)}" ${m.name === t.assignedName ? 'selected' : ''}>${escapeHtml(m.name)}${m.role ? ' (' + m.role + ')' : ''}</option>`)
-      .join('');
+    renderAssigneeSlots(getTaskAssignees(t));
 
     document.getElementById('aiResult').style.display = 'block';
     document.getElementById('panel-tasks').scrollIntoView({ behavior: 'smooth' });
@@ -934,10 +1023,7 @@
     document.getElementById('taskTitle').value = `[Placeholder] ${subsystem} task`;
     document.getElementById('taskDesc').value = description;
 
-    const assigneeSelect = document.getElementById('taskAssignee');
-    assigneeSelect.innerHTML = currentMembers
-      .map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)}${m.role ? ' (' + m.role + ')' : ''}</option>`)
-      .join('');
+    renderAssigneeSlots(['']);
 
     document.getElementById('aiResult').style.display = 'block';
   };
@@ -946,7 +1032,8 @@
     const title = document.getElementById('taskTitle').value.trim();
     const description = document.getElementById('taskDesc').value.trim();
     const subsystem = document.getElementById('aiSubsystem').value;
-    const assignedName = document.getElementById('taskAssignee').value;
+
+    const assignedNames = [...new Set(getAssigneeSlotValues().filter(v => v !== ''))];
 
     if (!title) {
       document.getElementById('error').textContent = 'Task needs a title.';
@@ -959,12 +1046,13 @@
 
     try {
       if (editingTaskIndex !== null) {
+        const { assignedName, ...rest } = currentTasks[editingTaskIndex];
         currentTasks[editingTaskIndex] = {
-          ...currentTasks[editingTaskIndex],
+          ...rest,
           title,
           description,
           subsystem,
-          assignedName: assignedName || null
+          assignedNames
         };
       } else {
         const newTask = {
@@ -972,7 +1060,7 @@
           title,
           description,
           subsystem,
-          assignedName: assignedName || null,
+          assignedNames,
           status: 'todo'
         };
         currentTasks = [...currentTasks, newTask];
