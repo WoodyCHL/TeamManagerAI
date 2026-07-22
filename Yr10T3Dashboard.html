@@ -235,6 +235,24 @@
     margin-bottom: 0;
   }
 
+  .task-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .task-admin-controls {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .task-admin-controls .btn {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+
   .task-title {
     font-weight: bold;
     font-size: 14px;
@@ -555,7 +573,7 @@
       <label for="taskAssignee">Assign to</label>
       <select id="taskAssignee"></select>
 
-      <button class="btn btn-primary" style="margin-top:12px;" onclick="saveTask()">Save task</button>
+      <button class="btn btn-primary" id="saveTaskBtn" style="margin-top:12px;" onclick="saveTask()">Save task</button>
       <button class="btn btn-secondary" style="margin-top:12px;" onclick="toggleAiForm()">Cancel</button>
     </div>
   </div>
@@ -806,8 +824,18 @@
 
     list.innerHTML = currentTasks.map((t, i) => `
       <div class="task-card">
-        <div class="task-title">${escapeHtml(t.title)}</div>
-        <div class="task-desc">${escapeHtml(t.description || '')}</div>
+        <div class="task-top">
+          <div>
+            <div class="task-title">${escapeHtml(t.title)}</div>
+            <div class="task-desc">${escapeHtml(t.description || '')}</div>
+          </div>
+          ${isCurrentUserLead ? `
+            <span class="task-admin-controls">
+              <button class="btn btn-secondary" id="editBtn-${i}">Edit</button>
+              <button class="btn btn-danger" id="deleteBtn-${i}">Delete</button>
+            </span>
+          ` : ''}
+        </div>
         <div class="task-meta">
           <span class="subsystem-badge">${escapeHtml(t.subsystem || 'general')}</span>
           <span class="assignee-tag">${t.assignedName ? '→ ' + escapeHtml(t.assignedName) : 'Unassigned'}</span>
@@ -823,6 +851,12 @@
     currentTasks.forEach((t, i) => {
       const select = document.getElementById(`statusSelect-${i}`);
       if (select) select.addEventListener('change', () => setTaskStatus(i, select.value));
+
+      const editBtn = document.getElementById(`editBtn-${i}`);
+      if (editBtn) editBtn.addEventListener('click', () => editTask(i));
+
+      const deleteBtn = document.getElementById(`deleteBtn-${i}`);
+      if (deleteBtn) deleteBtn.addEventListener('click', () => deleteTask(i));
     });
   }
 
@@ -831,7 +865,39 @@
     await saveTeamField({ tasks: currentTasks });
   }
 
+  async function deleteTask(index) {
+    const task = currentTasks[index];
+    if (!confirm(`Delete task "${task.title}"? This can't be undone.`)) return;
+
+    currentTasks = currentTasks.filter((_, i) => i !== index);
+    await saveTeamField({ tasks: currentTasks });
+    renderTasks();
+  }
+
+  let editingTaskIndex = null;
+
+  function editTask(index) {
+    editingTaskIndex = index;
+    const t = currentTasks[index];
+
+    document.getElementById('aiForm').classList.add('open');
+    document.getElementById('aiSubsystem').value = t.subsystem || 'drivetrain';
+    document.getElementById('aiDescription').value = '';
+
+    document.getElementById('taskTitle').value = t.title || '';
+    document.getElementById('taskDesc').value = t.description || '';
+
+    const assigneeSelect = document.getElementById('taskAssignee');
+    assigneeSelect.innerHTML = currentMembers
+      .map(m => `<option value="${escapeHtml(m.name)}" ${m.name === t.assignedName ? 'selected' : ''}>${escapeHtml(m.name)}${m.role ? ' (' + m.role + ')' : ''}</option>`)
+      .join('');
+
+    document.getElementById('aiResult').style.display = 'block';
+    document.getElementById('panel-tasks').scrollIntoView({ behavior: 'smooth' });
+  }
+
   window.toggleAiForm = function() {
+    editingTaskIndex = null;
     document.getElementById('aiForm').classList.toggle('open');
     document.getElementById('aiResult').style.display = 'none';
   };
@@ -887,21 +953,41 @@
       return;
     }
 
-    const newTask = {
-      id: Date.now().toString(),
-      title,
-      description,
-      subsystem,
-      assignedName: assignedName || null,
-      status: 'todo'
-    };
+    const saveBtn = document.getElementById('saveTaskBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
 
-    currentTasks = [...currentTasks, newTask];
-    await saveTeamField({ tasks: currentTasks });
-    renderTasks();
+    try {
+      if (editingTaskIndex !== null) {
+        currentTasks[editingTaskIndex] = {
+          ...currentTasks[editingTaskIndex],
+          title,
+          description,
+          subsystem,
+          assignedName: assignedName || null
+        };
+      } else {
+        const newTask = {
+          id: Date.now().toString(),
+          title,
+          description,
+          subsystem,
+          assignedName: assignedName || null,
+          status: 'todo'
+        };
+        currentTasks = [...currentTasks, newTask];
+      }
 
-    document.getElementById('aiForm').classList.remove('open');
-    document.getElementById('aiDescription').value = '';
+      await saveTeamField({ tasks: currentTasks });
+      renderTasks();
+
+      editingTaskIndex = null;
+      document.getElementById('aiForm').classList.remove('open');
+      document.getElementById('aiDescription').value = '';
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save task';
+    }
   };
 
   // ---------------- MEETING NOTES (page-based) ----------------
