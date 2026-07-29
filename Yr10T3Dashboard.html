@@ -1027,12 +1027,17 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
     document.getElementById('error').textContent = '';
 
     // Free models on OpenRouter get renamed/deprecated fairly often.
-    // Try a few known candidates in order and use whichever responds.
+    // Try several known candidates in order and use whichever responds.
+    // If ALL of these ever fail, check openrouter.ai/models, filter by
+    // "Free", and swap in whatever's currently listed.
     const CANDIDATE_MODELS = [
-      "qwen/qwen3.6-plus:free",
+      "deepseek/deepseek-chat-v3.1:free",
       "meta-llama/llama-3.3-70b-instruct:free",
-      "google/gemini-2.0-flash-exp:free",
-      "mistralai/mistral-small-3.1-24b-instruct:free"
+      "meta-llama/llama-3.1-8b-instruct:free",
+      "google/gemma-2-9b-it:free",
+      "qwen/qwen-2.5-72b-instruct:free",
+      "mistralai/mistral-7b-instruct:free",
+      "microsoft/phi-3-mini-128k-instruct:free"
     ];
 
     try {
