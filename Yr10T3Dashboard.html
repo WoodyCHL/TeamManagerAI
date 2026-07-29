@@ -1026,28 +1026,46 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
     if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating…'; }
     document.getElementById('error').textContent = '';
 
-    try {
-      const res = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: "qwen/qwen3.6-plus:free",
-            temperature: 0.3,
-            messages: [
-              { role: "user", content: buildRoboticsPrompt(subsystem, description) }
-            ]
-          })
-        }
-      );
+    // Free models on OpenRouter get renamed/deprecated fairly often.
+    // Try a few known candidates in order and use whichever responds.
+    const CANDIDATE_MODELS = [
+      "qwen/qwen3.6-plus:free",
+      "meta-llama/llama-3.3-70b-instruct:free",
+      "google/gemini-2.0-flash-exp:free",
+      "mistralai/mistral-small-3.1-24b-instruct:free"
+    ];
 
-      if (!res.ok) {
-        const errBody = await res.text();
-        throw new Error(`OpenRouter API error (${res.status}): ${errBody}`);
+    try {
+      let res = null;
+      let lastError = null;
+
+      for (const model of CANDIDATE_MODELS) {
+        res = await fetch(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model,
+              temperature: 0.3,
+              messages: [
+                { role: "user", content: buildRoboticsPrompt(subsystem, description) }
+              ]
+            })
+          }
+        );
+
+        if (res.ok) break;
+
+        lastError = await res.text();
+        res = null; // force trying the next candidate
+      }
+
+      if (!res) {
+        throw new Error(`All AI models unavailable. Last error: ${lastError}`);
       }
 
       const data = await res.json();
