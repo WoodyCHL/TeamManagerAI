@@ -576,7 +576,7 @@
 
   <div class="ai-form" id="aiForm">
     <div class="ai-placeholder-note">
-      AI generation isn't wired up yet — this is a placeholder. Fill in the fields and click "Generate" to see where the AI suggestion will appear once the API key is added.
+      Powered by AI (via OpenRouter). Describe the task roughly — it'll write a clear title, description, and suggest a suitable team member based on their role.
     </div>
 
     <label for="aiSubsystem">Subsystem</label>
@@ -591,7 +591,7 @@
     <label for="aiDescription">Rough description</label>
     <textarea id="aiDescription" placeholder="e.g. wire up the drivetrain motors and test forward/reverse"></textarea>
 
-    <button class="btn btn-secondary" style="margin-top:12px;" onclick="generateTaskWithAI()">Generate</button>
+    <button class="btn btn-secondary" id="generateBtn" style="margin-top:12px;" onclick="generateTaskWithAI()">Generate</button>
 
     <div id="aiResult" style="display:none; margin-top: 14px; border-top: 1px solid #d7e1e9; padding-top: 14px;">
       <label for="taskTitle">Task title</label>
@@ -676,12 +676,13 @@
 
   // ---------------------------------------------------------
   // Placeholder for your OpenRouter API key.
-  // Get one free at openrouter.ai -> Settings -> Keys.
+  // Get one free at openrouter.ai -> Settings -> Keys (no age
+  // restriction, unlike Google AI Studio).
   // NOTE: since this is a static site, this key is visible to
   // anyone who views the page source. Fine for a free-tier
   // school project key, but worth knowing.
   // ---------------------------------------------------------
-  const OPENROUTER_API_KEY = "PASTE_YOUR_OPENROUTER_KEY_HERE";
+  const OPENROUTER_API_KEY = "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";
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
@@ -991,6 +992,27 @@
     document.getElementById('aiResult').style.display = 'none';
   };
 
+  // Builds a tightly-scoped prompt so Gemini stays grounded in
+  // real robotics competition practice instead of generic advice.
+  function buildRoboticsPrompt(subsystem, roughDescription) {
+    const memberList = currentMembers
+      .map(m => `- ${m.name}${m.role ? ` (role: ${m.role})` : ' (no role assigned)'}`)
+      .join('\n');
+
+    return `You are helping a student robotics competition team (FTC/FRC/VEX style) turn a rough idea into a clear, actionable build task.
+
+Team roster:
+${memberList || '- (no members yet)'}
+
+Subsystem this task belongs to: ${subsystem}
+Rough description from the team lead: "${roughDescription}"
+
+Write a single build task for this subsystem. Use accurate, concrete robotics engineering language appropriate for a student team — real terms (e.g. "gear ratio," "encoder ticks," "PID tuning," "chassis alignment") where relevant, not vague generalities. Keep it scoped to something completable in one work session (1-3 hours), not an entire subsystem.
+
+Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this shape:
+{"title": "short task title, under 8 words", "description": "2-3 sentences, specific and actionable", "suggestedAssignee": "name of the best-suited member from the roster above, or empty string if none fit"}`;
+  }
+
   window.generateTaskWithAI = async function() {
     const subsystem = document.getElementById('aiSubsystem').value;
     const description = document.getElementById('aiDescription').value.trim();
@@ -1000,32 +1022,62 @@
       return;
     }
 
-    // ---------------------------------------------------------
-    // PLACEHOLDER: this is where the real AI call goes.
-    // Once OPENROUTER_API_KEY is set above, replace this block with:
-    //
-    // const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    //   method: "POST",
-    //   headers: {
-    //     "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-    //     "Content-Type": "application/json"
-    //   },
-    //   body: JSON.stringify({
-    //     model: "qwen/qwen3.6-plus:free",
-    //     messages: [{ role: "user", content: buildPrompt(subsystem, description) }]
-    //   })
-    // });
-    // const data = await res.json();
-    // const aiText = data.choices[0].message.content;
-    // ... parse aiText as JSON and fill the fields below
-    // ---------------------------------------------------------
+    const genBtn = document.getElementById('generateBtn');
+    if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating…'; }
+    document.getElementById('error').textContent = '';
 
-    document.getElementById('taskTitle').value = `[Placeholder] ${subsystem} task`;
-    document.getElementById('taskDesc').value = description;
+    try {
+      const res = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "qwen/qwen3.6-plus:free",
+            temperature: 0.3,
+            messages: [
+              { role: "user", content: buildRoboticsPrompt(subsystem, description) }
+            ]
+          })
+        }
+      );
 
-    renderAssigneeSlots(['']);
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`OpenRouter API error (${res.status}): ${errBody}`);
+      }
 
-    document.getElementById('aiResult').style.display = 'block';
+      const data = await res.json();
+      const rawText = data.choices?.[0]?.message?.content;
+      if (!rawText) throw new Error('No response from AI.');
+
+      // strip markdown code fences if the model added them despite instructions
+      const cleaned = rawText.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      document.getElementById('taskTitle').value = parsed.title || `${subsystem} task`;
+      document.getElementById('taskDesc').value = parsed.description || description;
+
+      const suggested = parsed.suggestedAssignee || '';
+      const validSuggestion = currentMembers.some(m => m.name === suggested) ? suggested : '';
+      renderAssigneeSlots(validSuggestion ? [validSuggestion] : ['']);
+
+      document.getElementById('aiResult').style.display = 'block';
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('error').textContent = 'AI generation failed: ' + err.message + ' — check your OpenRouter API key is set correctly.';
+      // fall back to a manual placeholder so the form is still usable
+      document.getElementById('taskTitle').value = `${subsystem} task`;
+      document.getElementById('taskDesc').value = description;
+      renderAssigneeSlots(['']);
+      document.getElementById('aiResult').style.display = 'block';
+    } finally {
+      if (genBtn) { genBtn.disabled = false; genBtn.textContent = 'Generate'; }
+    }
   };
 
   window.saveTask = async function() {
