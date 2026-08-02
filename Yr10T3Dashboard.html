@@ -922,11 +922,36 @@
 
   // ---------------- ASSIGNEE SLOTS ----------------
 
+  // maps each subsystem to the role best suited for it, so the
+  // assignee dropdown can recommend the right person automatically
+  function getRecommendedRole(subsystem) {
+    const map = {
+      drivetrain: 'Builder',
+      arm: 'Builder',
+      sensors: 'Builder',
+      programming: 'Coder',
+      testing: null // could go either way, no strong recommendation
+    };
+    return map[subsystem] || null;
+  }
+
   function memberOptionsHtml(selectedName) {
+    const subsystem = document.getElementById('aiSubsystem').value;
+    const recommendedRole = getRecommendedRole(subsystem);
+
+    // recommended-role members float to the top of the list
+    const sortedMembers = [...currentMembers].sort((a, b) => {
+      const aMatch = recommendedRole && a.role === recommendedRole ? 0 : 1;
+      const bMatch = recommendedRole && b.role === recommendedRole ? 0 : 1;
+      return aMatch - bMatch;
+    });
+
     const options = ['<option value="">— select member —</option>']
-      .concat(currentMembers.map(m =>
-        `<option value="${escapeHtml(m.name)}" ${m.name === selectedName ? 'selected' : ''}>${escapeHtml(m.name)}${m.role ? ' (' + m.role + ')' : ''}</option>`
-      ));
+      .concat(sortedMembers.map(m => {
+        const isRecommended = recommendedRole && m.role === recommendedRole;
+        const label = `${isRecommended ? '★ ' : ''}${m.name}${m.role ? ' (' + m.role + ')' : ''}${isRecommended ? ' — recommended' : ''}`;
+        return `<option value="${escapeHtml(m.name)}" ${m.name === selectedName ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+      }));
     return options.join('');
   }
 
@@ -968,6 +993,13 @@
   function getAssigneeSlotValues() {
     return Array.from(document.querySelectorAll('.assignee-slot-select')).map(s => s.value);
   }
+
+  // re-rank the recommendation whenever the subsystem changes,
+  // without losing whatever's already been picked
+  document.getElementById('aiSubsystem').addEventListener('change', () => {
+    const current = getAssigneeSlotValues();
+    if (current.length > 0) renderAssigneeSlots(current);
+  });
 
   function editTask(index) {
     editingTaskIndex = index;
