@@ -349,6 +349,27 @@
     color: #c23b3b;
   }
 
+  .refine-box {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed #d7e1e9;
+  }
+
+  .refine-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .refine-row input {
+    margin-top: 0;
+    flex: 1;
+  }
+
+  .refine-row .btn {
+    flex-shrink: 0;
+  }
+
   label {
     display: block;
     margin-top: 10px;
@@ -602,6 +623,14 @@
 
       <label>Assign to</label>
       <div id="assigneeSlots"></div>
+
+      <div class="refine-box">
+        <label for="refineFeedback">Not quite right? Tell it what to fix</label>
+        <div class="refine-row">
+          <input id="refineFeedback" placeholder="e.g. use goBILDA motors instead of NEO">
+          <button type="button" class="btn btn-secondary" id="refineBtn" onclick="regenerateWithFeedback()">Refine</button>
+        </div>
+      </div>
 
       <button class="btn btn-primary" id="saveTaskBtn" style="margin-top:12px;" onclick="saveTask()">Save task</button>
       <button class="btn btn-secondary" style="margin-top:12px;" onclick="toggleAiForm()">Cancel</button>
@@ -1026,12 +1055,24 @@
 
   // Builds a tightly-scoped prompt so Gemini stays grounded in
   // real robotics competition practice instead of generic advice.
+  // Shared hardware constraints so both the initial generation and any
+  // refinement stay locked to FTC-legal parts, not FRC/VEX equivalents.
+  const FTC_HARDWARE_RULES = `This team competes in FIRST Tech Challenge (FTC) specifically — not FRC, not VEX. Stay strictly within FTC-legal hardware:
+- Motors: 12V DC motors only, e.g. goBILDA 5203 series, REV Robotics HD Hex motors, Tetrix motors. NEVER mention NEO motors, SPARK MAX, or any FRC-style brushless motor/controller — these are FRC hardware and are not FTC-legal.
+- Control system: REV Control Hub and optional REV Expansion Hub only. NEVER mention roboRIO, CAN bus, Talon, Victor, or Falcon — these are FRC-only.
+- Actuators: standard or continuous-rotation hobby servos (goBILDA/REV/Tetrix branded or generic).
+- Sensors: REV color/distance sensors, motor-integrated encoders, odometry pods ("dead wheels") for position tracking, REV IMU.
+- Mecanum drives: the four wheels mount in the same orientation as a normal drivetrain (not rotated 90° from each other) — it's the rollers on each wheel's surface that sit at 45°, giving the strafing motion.
+If you are not confident a specific part is FTC-legal, describe it generically (e.g. "the drive motors") rather than naming a part that might be wrong.`;
+
   function buildRoboticsPrompt(subsystem, roughDescription) {
     const memberList = currentMembers
       .map(m => `- ${m.name}${m.role ? ` (role: ${m.role})` : ' (no role assigned)'}`)
       .join('\n');
 
-    return `You are helping a student robotics competition team (FTC/FRC/VEX style) turn a rough idea into a clear, actionable build task.
+    return `You are helping a student FTC (FIRST Tech Challenge) robotics team turn a rough idea into a clear, actionable build task.
+
+${FTC_HARDWARE_RULES}
 
 Team roster:
 ${memberList || '- (no members yet)'}
@@ -1043,6 +1084,84 @@ Write a single build task for this subsystem. Use accurate, concrete robotics en
 
 Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this shape:
 {"title": "short task title, under 8 words", "description": "2-3 sentences, specific and actionable", "suggestedAssignee": "name of the best-suited member from the roster above, or empty string if none fit"}`;
+  }
+
+  function buildRefinementPrompt(subsystem, previousTitle, previousDescription, feedback) {
+    const memberList = currentMembers
+      .map(m => `- ${m.name}${m.role ? ` (role: ${m.role})` : ' (no role assigned)'}`)
+      .join('\n');
+
+    return `You previously drafted this FTC robotics build task for the "${subsystem}" subsystem:
+
+Title: "${previousTitle}"
+Description: "${previousDescription}"
+
+${FTC_HARDWARE_RULES}
+
+Team roster:
+${memberList || '- (no members yet)'}
+
+The team lead wants this revised with the following feedback: "${feedback}"
+
+Rewrite the task, applying that feedback while keeping it scoped to one work session (1-3 hours).
+
+Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this shape:
+{"title": "short task title, under 8 words", "description": "2-3 sentences, specific and actionable", "suggestedAssignee": "name of the best-suited member from the roster above, or empty string if none fit"}`;
+  }
+
+  // Free models on OpenRouter get renamed/deprecated fairly often.
+  // Try several known candidates in order and use whichever responds.
+  // If ALL of these ever fail, check openrouter.ai/models, filter by
+  // "Free", and swap in whatever's currently listed.
+  const CANDIDATE_MODELS = [
+    "openai/gpt-oss-20b:free",
+    "deepseek/deepseek-chat-v3.1:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "google/gemma-2-9b-it:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
+    "microsoft/phi-3-mini-128k-instruct:free"
+  ];
+
+  // Shared caller used by both first-generation and refinement —
+  // tries each candidate model in turn and returns the parsed JSON.
+  async function callAIForTask(promptText) {
+    let res = null;
+    let lastError = null;
+
+    for (const model of CANDIDATE_MODELS) {
+      res = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.3,
+            messages: [{ role: "user", content: promptText }]
+          })
+        }
+      );
+
+      if (res.ok) break;
+      lastError = await res.text();
+      res = null;
+    }
+
+    if (!res) {
+      throw new Error(`All AI models unavailable. Last error: ${lastError}`);
+    }
+
+    const data = await res.json();
+    const rawText = data.choices?.[0]?.message?.content;
+    if (!rawText) throw new Error('No response from AI.');
+
+    const cleaned = rawText.replace(/```json|```/g, '').trim();
+    return JSON.parse(cleaned);
   }
 
   window.generateTaskWithAI = async function() {
@@ -1058,61 +1177,8 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
     if (genBtn) { genBtn.disabled = true; genBtn.textContent = 'Generating…'; }
     document.getElementById('error').textContent = '';
 
-    // Free models on OpenRouter get renamed/deprecated fairly often.
-    // Try several known candidates in order and use whichever responds.
-    // If ALL of these ever fail, check openrouter.ai/models, filter by
-    // "Free", and swap in whatever's currently listed.
-    const CANDIDATE_MODELS = [
-      "openai/gpt-oss-20b:free",
-      "deepseek/deepseek-chat-v3.1:free",
-      "meta-llama/llama-3.3-70b-instruct:free",
-      "meta-llama/llama-3.1-8b-instruct:free",
-      "google/gemma-2-9b-it:free",
-      "qwen/qwen-2.5-72b-instruct:free",
-      "mistralai/mistral-7b-instruct:free",
-      "microsoft/phi-3-mini-128k-instruct:free"
-    ];
-
     try {
-      let res = null;
-      let lastError = null;
-
-      for (const model of CANDIDATE_MODELS) {
-        res = await fetch(
-          "https://openrouter.ai/api/v1/chat/completions",
-          {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              model,
-              temperature: 0.3,
-              messages: [
-                { role: "user", content: buildRoboticsPrompt(subsystem, description) }
-              ]
-            })
-          }
-        );
-
-        if (res.ok) break;
-
-        lastError = await res.text();
-        res = null; // force trying the next candidate
-      }
-
-      if (!res) {
-        throw new Error(`All AI models unavailable. Last error: ${lastError}`);
-      }
-
-      const data = await res.json();
-      const rawText = data.choices?.[0]?.message?.content;
-      if (!rawText) throw new Error('No response from AI.');
-
-      // strip markdown code fences if the model added them despite instructions
-      const cleaned = rawText.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
+      const parsed = await callAIForTask(buildRoboticsPrompt(subsystem, description));
 
       document.getElementById('taskTitle').value = parsed.title || `${subsystem} task`;
       document.getElementById('taskDesc').value = parsed.description || description;
@@ -1133,6 +1199,45 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
       document.getElementById('aiResult').style.display = 'block';
     } finally {
       if (genBtn) { genBtn.disabled = false; genBtn.textContent = 'Generate'; }
+    }
+  };
+
+  window.regenerateWithFeedback = async function() {
+    const feedback = document.getElementById('refineFeedback').value.trim();
+    if (!feedback) {
+      document.getElementById('error').textContent = 'Type what you\'d like changed before refining.';
+      return;
+    }
+
+    const subsystem = document.getElementById('aiSubsystem').value;
+    const previousTitle = document.getElementById('taskTitle').value.trim();
+    const previousDescription = document.getElementById('taskDesc').value.trim();
+
+    const refineBtn = document.getElementById('refineBtn');
+    refineBtn.disabled = true;
+    refineBtn.textContent = 'Refining…';
+    document.getElementById('error').textContent = '';
+
+    try {
+      const parsed = await callAIForTask(
+        buildRefinementPrompt(subsystem, previousTitle, previousDescription, feedback)
+      );
+
+      document.getElementById('taskTitle').value = parsed.title || previousTitle;
+      document.getElementById('taskDesc').value = parsed.description || previousDescription;
+
+      const suggested = parsed.suggestedAssignee || '';
+      const validSuggestion = currentMembers.some(m => m.name === suggested) ? suggested : '';
+      if (validSuggestion) renderAssigneeSlots([validSuggestion]);
+
+      document.getElementById('refineFeedback').value = '';
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('error').textContent = 'Refinement failed: ' + err.message;
+    } finally {
+      refineBtn.disabled = false;
+      refineBtn.textContent = 'Refine';
     }
   };
 
