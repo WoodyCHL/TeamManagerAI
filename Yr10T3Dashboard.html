@@ -548,6 +548,51 @@
     text-align: right;
   }
 
+  .note-ai-tasks-box {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #eef3f7;
+  }
+
+  .extracted-task-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid #eef3f7;
+    border-radius: 6px;
+    margin-top: 8px;
+  }
+
+  .extracted-task-row input[type="checkbox"] {
+    width: auto;
+    margin-top: 3px;
+    accent-color: #ff7a3d;
+  }
+
+  .extracted-task-info {
+    flex: 1;
+  }
+
+  .extracted-task-title {
+    font-weight: bold;
+    font-size: 13px;
+  }
+
+  .extracted-task-desc {
+    font-size: 12px;
+    color: #4a5f74;
+    margin-top: 2px;
+  }
+
+  .extracted-task-meta {
+    margin-top: 4px;
+  }
+
+  .add-extracted-btn {
+    margin-top: 12px;
+  }
+
   #error {
     color: #c23b3b;
     margin-top: 16px;
@@ -684,6 +729,11 @@
     <div id="noteBodyEditor" class="note-body-editor" contenteditable="true" oninput="scheduleNoteSave()"></div>
 
     <div class="note-save-status" id="noteSaveStatus"></div>
+
+    <div class="note-ai-tasks-box" id="noteAiTasksBox" style="display:none;">
+      <button class="btn btn-secondary" id="extractTasksBtn" onclick="extractTasksFromNote()">✨ Generate tasks from this note</button>
+      <div id="extractedTasksList"></div>
+    </div>
   </div>
 
 </div>
@@ -1109,6 +1159,30 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
 {"title": "short task title, under 8 words", "description": "2-3 sentences, specific and actionable", "suggestedAssignee": "name of the best-suited member from the roster above, or empty string if none fit"}`;
   }
 
+  function buildTaskExtractionPrompt(noteTitle, noteText) {
+    const memberList = currentMembers
+      .map(m => `- ${m.name}${m.role ? ` (role: ${m.role})` : ' (no role assigned)'}`)
+      .join('\n');
+
+    return `Here are meeting notes from an FTC (FIRST Tech Challenge) robotics team, titled "${noteTitle || 'Untitled'}":
+
+"""
+${noteText}
+"""
+
+${FTC_HARDWARE_RULES}
+
+Team roster:
+${memberList || '- (no members yet)'}
+
+Read through these notes and pull out concrete, actionable build tasks that were discussed or implied — things someone could actually go do, not vague topics. Ignore small talk, scheduling chat, or anything that isn't an actual build/programming/testing action. If there are no real actionable tasks in these notes, return an empty array.
+
+For each task, classify it into exactly one of these subsystems: drivetrain, arm, sensors, programming, testing.
+
+Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array in exactly this shape:
+[{"title": "short task title, under 8 words", "description": "1-2 sentences, specific and actionable", "subsystem": "one of: drivetrain, arm, sensors, programming, testing", "suggestedAssignee": "name of the best-suited member from the roster above, or empty string if none fit"}]`;
+  }
+
   // Free models on OpenRouter get renamed/deprecated fairly often.
   // Try several known candidates in order and use whichever responds.
   // If ALL of these ever fail, check openrouter.ai/models, filter by
@@ -1364,6 +1438,9 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
     pinBtn.classList.toggle('pinned', !!note.pinned);
     pinBtn.title = note.pinned ? 'Unpin' : 'Pin to top';
 
+    document.getElementById('noteAiTasksBox').style.display = isCurrentUserLead ? 'block' : 'none';
+    document.getElementById('extractedTasksList').innerHTML = '';
+
     document.getElementById('notesListView').style.display = 'none';
     document.getElementById('notesEditorView').style.display = 'block';
   };
@@ -1414,6 +1491,98 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
     currentNotes = currentNotes.filter(n => n.id !== currentNoteId);
     await saveTeamField({ notes: currentNotes });
     closeNoteEditor();
+  };
+
+  // ---------------- AI: EXTRACT TASKS FROM NOTE ----------------
+
+  let lastExtractedTasks = [];
+
+  window.extractTasksFromNote = async function() {
+    const noteTitle = document.getElementById('noteTitleInput').value.trim();
+    const noteText = document.getElementById('noteBodyEditor').innerText.trim();
+
+    if (!noteText) {
+      document.getElementById('error').textContent = 'This note is empty — write something first.';
+      return;
+    }
+
+    const btn = document.getElementById('extractTasksBtn');
+    btn.disabled = true;
+    btn.textContent = 'Reading notes…';
+    document.getElementById('error').textContent = '';
+    document.getElementById('extractedTasksList').innerHTML = '';
+
+    try {
+      const parsed = await callAIForTask(buildTaskExtractionPrompt(noteTitle, noteText));
+      lastExtractedTasks = Array.isArray(parsed) ? parsed : [];
+
+      if (lastExtractedTasks.length === 0) {
+        document.getElementById('extractedTasksList').innerHTML =
+          '<div class="empty-state">No actionable tasks found in this note.</div>';
+        return;
+      }
+
+      renderExtractedTasks();
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('error').textContent = 'Could not extract tasks: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '✨ Generate tasks from this note';
+    }
+  };
+
+  function renderExtractedTasks() {
+    const container = document.getElementById('extractedTasksList');
+
+    container.innerHTML = lastExtractedTasks.map((t, i) => `
+      <div class="extracted-task-row">
+        <input type="checkbox" id="extractedCheck-${i}" checked>
+        <div class="extracted-task-info">
+          <div class="extracted-task-title">${escapeHtml(t.title || 'Untitled task')}</div>
+          <div class="extracted-task-desc">${escapeHtml(t.description || '')}</div>
+          <div class="extracted-task-meta">
+            <span class="subsystem-badge">${escapeHtml(t.subsystem || 'general')}</span>
+            ${t.suggestedAssignee ? `<span class="assignee-tag">→ ${escapeHtml(t.suggestedAssignee)}</span>` : ''}
+          </div>
+        </div>
+      </div>
+    `).join('') + `
+      <button class="btn btn-primary add-extracted-btn" onclick="addSelectedExtractedTasks()">Add selected to Tasks</button>
+    `;
+  }
+
+  window.addSelectedExtractedTasks = async function() {
+    const selected = lastExtractedTasks.filter((t, i) => {
+      const check = document.getElementById(`extractedCheck-${i}`);
+      return check && check.checked;
+    });
+
+    if (selected.length === 0) {
+      document.getElementById('error').textContent = 'Select at least one task to add.';
+      return;
+    }
+
+    const newTasks = selected.map(t => {
+      const validAssignee = currentMembers.some(m => m.name === t.suggestedAssignee) ? t.suggestedAssignee : null;
+      return {
+        id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+        title: t.title || 'Untitled task',
+        description: t.description || '',
+        subsystem: t.subsystem || 'general',
+        assignedNames: validAssignee ? [validAssignee] : [],
+        status: 'todo'
+      };
+    });
+
+    currentTasks = [...currentTasks, ...newTasks];
+    await saveTeamField({ tasks: currentTasks });
+    renderTasks();
+
+    lastExtractedTasks = [];
+    document.getElementById('extractedTasksList').innerHTML =
+      `<div class="empty-state">Added ${newTasks.length} task${newTasks.length > 1 ? 's' : ''} — check the Tasks tab.</div>`;
   };
 
   window.formatDoc = function(command, value) {
