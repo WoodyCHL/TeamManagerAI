@@ -593,6 +593,43 @@
     margin-top: 12px;
   }
 
+  .ftc-team-card {
+    background: #f8fafb;
+    border: 1px solid #d7e1e9;
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 4px;
+  }
+
+  .ftc-team-card .team-name {
+    font-weight: bold;
+    font-size: 15px;
+  }
+
+  .ftc-team-card .team-location {
+    font-size: 12px;
+    color: #4a5f74;
+    margin-top: 2px;
+  }
+
+  .ftc-event-card {
+    border: 1px solid #eef3f7;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+
+  .ftc-event-name {
+    font-weight: bold;
+    font-size: 13px;
+  }
+
+  .ftc-event-meta {
+    font-size: 12px;
+    color: #4a5f74;
+    margin-top: 4px;
+  }
+
   #error {
     color: #c23b3b;
     margin-top: 16px;
@@ -621,6 +658,9 @@
     </div>
     <div class="menu-item" data-view="notes" onclick="switchView('notes')">
       <span class="menu-icon">📝</span> Meeting notes
+    </div>
+    <div class="menu-item" data-view="events" onclick="switchView('events')">
+      <span class="menu-icon">🏆</span> Events
     </div>
   </div>
 </div>
@@ -738,6 +778,29 @@
 
 </div>
 
+<!-- EVENTS (FTC Events API) -->
+<div class="panel" id="panel-events">
+  <div class="panel-head">
+    <h2>Events</h2>
+  </div>
+
+  <div id="eventsSetup">
+    <label for="ftcTeamNumber">FTC team number</label>
+    <input id="ftcTeamNumber" placeholder="e.g. 12345">
+
+    <label for="ftcSeason">Season year</label>
+    <input id="ftcSeason" placeholder="e.g. 2025">
+
+    <button class="btn btn-primary" style="margin-top:12px;" onclick="saveFtcSettingsAndLoad()">Save & load events</button>
+  </div>
+
+  <div id="eventsContent" style="display:none;">
+    <div id="ftcTeamInfo"></div>
+    <div id="ftcEventsList" style="margin-top:14px;"></div>
+    <button class="btn btn-secondary" style="margin-top:14px;" onclick="showEventsSetup()">Change team number</button>
+  </div>
+</div>
+
 <div id="error"></div>
 
 <script type="module">
@@ -763,6 +826,13 @@
   // ---------------------------------------------------------
   const OPENROUTER_API_KEY = "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";
 
+  // FTC Events API credentials.
+  // NOTE: FIRST's terms say this token shouldn't be published in a public
+  // repo or an app accessible by others — it's here anyway per instruction,
+  // but that means FIRST could disable it at any time without warning.
+  const FTC_USERNAME = "woodychen";
+  const FTC_TOKEN = "E330B5C0-C858-451A-8FE1-FE961BD5D2FB";
+
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
@@ -772,6 +842,8 @@
   let currentMembers = [];
   let currentTasks = [];
   let currentNotes = [];
+  let currentFtcTeamNumber = '';
+  let currentFtcSeason = '';
   let teamRef = null;
   let isCurrentUserLead = false;
 
@@ -823,6 +895,8 @@
       currentMembers = team.members || [];
       currentTasks = team.tasks || [];
       currentNotes = team.notes || [];
+      currentFtcTeamNumber = team.ftcTeamNumber || '';
+      currentFtcSeason = team.ftcSeason || '';
 
       const me = currentMembers.find(
         m => m.name.trim().toLowerCase() === (myName || '').trim().toLowerCase()
@@ -839,6 +913,12 @@
       renderRoster();
       renderTasks();
       renderNotes();
+
+      if (currentFtcTeamNumber && currentFtcSeason) {
+        document.getElementById('ftcTeamNumber').value = currentFtcTeamNumber;
+        document.getElementById('ftcSeason').value = currentFtcSeason;
+        loadFtcEvents();
+      }
 
       switchView('roster');
 
@@ -1606,6 +1686,90 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
 
     document.execCommand('insertHTML', false, ul.outerHTML);
     scheduleNoteSave();
+  };
+
+  // ---------------- EVENTS (FTC Events API) ----------------
+
+  window.showEventsSetup = function() {
+    document.getElementById('eventsSetup').style.display = 'block';
+    document.getElementById('eventsContent').style.display = 'none';
+  };
+
+  window.saveFtcSettingsAndLoad = async function() {
+    const teamNumber = document.getElementById('ftcTeamNumber').value.trim();
+    const season = document.getElementById('ftcSeason').value.trim();
+
+    if (!teamNumber || !season) {
+      document.getElementById('error').textContent = 'Enter both team number and season.';
+      return;
+    }
+
+    currentFtcTeamNumber = teamNumber;
+    currentFtcSeason = season;
+
+    if (teamRef) {
+      await saveTeamField({ ftcTeamNumber: teamNumber, ftcSeason: season });
+    }
+
+    await loadFtcEvents();
+  };
+
+  window.loadFtcEvents = async function loadFtcEvents() {
+    if (!currentFtcTeamNumber || !currentFtcSeason) return;
+
+    const authHeader = "Basic " + btoa(`${FTC_USERNAME}:${FTC_TOKEN}`);
+    const base = `https://ftc-events.firstinspires.org/v2.0/${currentFtcSeason}`;
+
+    document.getElementById('ftcTeamInfo').innerHTML = '<div class="empty-state">Loading team info…</div>';
+    document.getElementById('ftcEventsList').innerHTML = '';
+    document.getElementById('error').textContent = '';
+
+    try {
+      const [teamRes, eventsRes] = await Promise.all([
+        fetch(`${base}/teams?teamNumber=${currentFtcTeamNumber}`, {
+          headers: { "Authorization": authHeader }
+        }),
+        fetch(`${base}/events?teamNumber=${currentFtcTeamNumber}`, {
+          headers: { "Authorization": authHeader }
+        })
+      ]);
+
+      if (!teamRes.ok) throw new Error(`Team lookup failed (${teamRes.status})`);
+      if (!eventsRes.ok) throw new Error(`Events lookup failed (${eventsRes.status})`);
+
+      const teamData = await teamRes.json();
+      const eventsData = await eventsRes.json();
+
+      const team = teamData.teams?.[0];
+      document.getElementById('ftcTeamInfo').innerHTML = team ? `
+        <div class="ftc-team-card">
+          <div class="team-name">Team ${escapeHtml(String(team.teamNumber))} — ${escapeHtml(team.nameShort || team.nameFull || '')}</div>
+          <div class="team-location">${escapeHtml([team.city, team.stateProv, team.country].filter(Boolean).join(', '))}</div>
+        </div>
+      ` : '<div class="empty-state">Team not found for that number/season.</div>';
+
+      const events = eventsData.events || [];
+      document.getElementById('ftcEventsList').innerHTML = events.length > 0
+        ? events.map(e => `
+            <div class="ftc-event-card">
+              <div class="ftc-event-name">${escapeHtml(e.name || 'Event')}</div>
+              <div class="ftc-event-meta">
+                ${escapeHtml(e.dateStart ? new Date(e.dateStart).toLocaleDateString() : '')}
+                ${e.venue ? ' · ' + escapeHtml(e.venue) : ''}
+                ${e.city ? ' · ' + escapeHtml(e.city) : ''}
+              </div>
+            </div>
+          `).join('')
+        : '<div class="empty-state">No events found for this team/season.</div>';
+
+      document.getElementById('eventsSetup').style.display = 'none';
+      document.getElementById('eventsContent').style.display = 'block';
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('error').textContent = 'Could not load FTC event data: ' + err.message + ' (this may be a CORS restriction from the FTC Events API — check the browser console for details).';
+      document.getElementById('ftcTeamInfo').innerHTML = '';
+    }
   };
 
   function escapeHtml(str) {
