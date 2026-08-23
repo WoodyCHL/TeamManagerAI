@@ -593,23 +593,57 @@
     margin-top: 12px;
   }
 
-  .ftc-team-card {
+  .event-form {
+    display: none;
     background: #f8fafb;
     border: 1px solid #d7e1e9;
     border-radius: 6px;
     padding: 14px;
-    margin-bottom: 4px;
+    margin-bottom: 16px;
   }
 
-  .ftc-team-card .team-name {
+  .event-form.open {
+    display: block;
+  }
+
+  .countdown-card {
+    background: #0e2438;
+    color: #eef3f7;
+    border-radius: 8px;
+    padding: 18px;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+
+  .countdown-label {
+    font-size: 13px;
+    color: #9fb4c7;
+    margin-bottom: 10px;
+  }
+
+  .countdown-event-name {
+    font-size: 18px;
     font-weight: bold;
-    font-size: 15px;
   }
 
-  .ftc-team-card .team-location {
+  .countdown-timer {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .countdown-timer span {
+    font-size: 28px;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+    color: #ff7a3d;
+  }
+
+  .countdown-timer span small {
     font-size: 12px;
-    color: #4a5f74;
-    margin-top: 2px;
+    color: #9fb4c7;
+    font-weight: normal;
+    margin-left: 2px;
   }
 
   .ftc-event-card {
@@ -617,6 +651,10 @@
     border-radius: 6px;
     padding: 12px;
     margin-bottom: 8px;
+  }
+
+  .ftc-event-card.event-past {
+    opacity: 0.55;
   }
 
   .ftc-event-name {
@@ -778,27 +816,43 @@
 
 </div>
 
-<!-- EVENTS (FTC Events API) -->
+<!-- EVENTS -->
 <div class="panel" id="panel-events">
   <div class="panel-head">
-    <h2>Events</h2>
+    <h2>Upcoming events</h2>
+    <span>
+      <button class="btn btn-secondary" id="syncFtcBtn" style="display:none;" onclick="toggleFtcSyncForm()">🔄 Sync from FTC API</button>
+      <button class="btn btn-primary" id="addEventBtn" style="display:none;" onclick="toggleEventForm()">+ Add event</button>
+    </span>
   </div>
 
-  <div id="eventsSetup">
+  <div class="event-form" id="ftcSyncForm">
     <label for="ftcTeamNumber">FTC team number</label>
-    <input id="ftcTeamNumber" placeholder="e.g. 12345">
+    <input id="ftcTeamNumber" placeholder="e.g. 18187">
 
     <label for="ftcSeason">Season year</label>
-    <input id="ftcSeason" placeholder="e.g. 2025">
+    <input id="ftcSeason" placeholder="e.g. 2024">
 
-    <button class="btn btn-primary" style="margin-top:12px;" onclick="saveFtcSettingsAndLoad()">Save & load events</button>
+    <button class="btn btn-primary" style="margin-top:12px;" onclick="syncFromFtcApi()">Sync now</button>
+    <button class="btn btn-secondary" style="margin-top:12px;" onclick="toggleFtcSyncForm()">Cancel</button>
   </div>
 
-  <div id="eventsContent" style="display:none;">
-    <div id="ftcTeamInfo"></div>
-    <div id="ftcEventsList" style="margin-top:14px;"></div>
-    <button class="btn btn-secondary" style="margin-top:14px;" onclick="showEventsSetup()">Change team number</button>
+  <div class="event-form" id="eventForm">
+    <label for="eventName">Event name</label>
+    <input id="eventName" placeholder="e.g. League Qualifier 1">
+
+    <label for="eventDate">Date</label>
+    <input id="eventDate" type="date">
+
+    <label for="eventLocation">Location</label>
+    <input id="eventLocation" placeholder="e.g. Sheldon College, Brisbane">
+
+    <button class="btn btn-primary" style="margin-top:12px;" onclick="saveEvent()">Save event</button>
+    <button class="btn btn-secondary" style="margin-top:12px;" onclick="toggleEventForm()">Cancel</button>
   </div>
+
+  <div id="nextEventCountdown"></div>
+  <div id="eventsListDisplay"></div>
 </div>
 
 <div id="error"></div>
@@ -826,12 +880,9 @@
   // ---------------------------------------------------------
   const OPENROUTER_API_KEY = "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";
 
-  // FTC Events API credentials.
-  // NOTE: FIRST's terms say this token shouldn't be published in a public
-  // repo or an app accessible by others — it's here anyway per instruction,
-  // but that means FIRST could disable it at any time without warning.
-  const FTC_USERNAME = "woodychen";
-  const FTC_TOKEN = "E330B5C0-C858-451A-8FE1-FE961BD5D2FB";
+  // Cloudflare Worker that proxies FTC Events API calls (avoids CORS
+  // and keeps the FTC token server-side, not in this public repo)
+  const FTC_PROXY_URL = "https://restless-mouse-a2ff.s12471.workers.dev";
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
@@ -842,8 +893,7 @@
   let currentMembers = [];
   let currentTasks = [];
   let currentNotes = [];
-  let currentFtcTeamNumber = '';
-  let currentFtcSeason = '';
+  let currentEvents = [];
   let teamRef = null;
   let isCurrentUserLead = false;
 
@@ -895,8 +945,7 @@
       currentMembers = team.members || [];
       currentTasks = team.tasks || [];
       currentNotes = team.notes || [];
-      currentFtcTeamNumber = team.ftcTeamNumber || '';
-      currentFtcSeason = team.ftcSeason || '';
+      currentEvents = team.events || [];
 
       const me = currentMembers.find(
         m => m.name.trim().toLowerCase() === (myName || '').trim().toLowerCase()
@@ -908,17 +957,17 @@
 
       if (isCurrentUserLead) {
         document.getElementById('createTaskBtn').style.display = 'inline-block';
+        document.getElementById('addEventBtn').style.display = 'inline-block';
+        document.getElementById('syncFtcBtn').style.display = 'inline-block';
       }
+
+      if (team.ftcTeamNumber) document.getElementById('ftcTeamNumber').value = team.ftcTeamNumber;
+      if (team.ftcSeason) document.getElementById('ftcSeason').value = team.ftcSeason;
 
       renderRoster();
       renderTasks();
       renderNotes();
-
-      if (currentFtcTeamNumber && currentFtcSeason) {
-        document.getElementById('ftcTeamNumber').value = currentFtcTeamNumber;
-        document.getElementById('ftcSeason').value = currentFtcSeason;
-        loadFtcEvents();
-      }
+      renderEvents();
 
       switchView('roster');
 
@@ -1688,89 +1737,199 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     scheduleNoteSave();
   };
 
-  // ---------------- EVENTS (FTC Events API) ----------------
+  // ---------------- EVENTS (manual entry + countdown) ----------------
 
-  window.showEventsSetup = function() {
-    document.getElementById('eventsSetup').style.display = 'block';
-    document.getElementById('eventsContent').style.display = 'none';
+  let countdownTimer = null;
+
+  window.toggleFtcSyncForm = function() {
+    document.getElementById('ftcSyncForm').classList.toggle('open');
   };
 
-  window.saveFtcSettingsAndLoad = async function() {
+  window.syncFromFtcApi = async function() {
     const teamNumber = document.getElementById('ftcTeamNumber').value.trim();
     const season = document.getElementById('ftcSeason').value.trim();
 
     if (!teamNumber || !season) {
-      document.getElementById('error').textContent = 'Enter both team number and season.';
+      document.getElementById('error').textContent = 'Enter both FTC team number and season.';
       return;
     }
 
-    currentFtcTeamNumber = teamNumber;
-    currentFtcSeason = season;
+    await saveTeamField({ ftcTeamNumber: teamNumber, ftcSeason: season });
 
-    if (teamRef) {
-      await saveTeamField({ ftcTeamNumber: teamNumber, ftcSeason: season });
-    }
-
-    await loadFtcEvents();
-  };
-
-  window.loadFtcEvents = async function loadFtcEvents() {
-    if (!currentFtcTeamNumber || !currentFtcSeason) return;
-
-    const authHeader = "Basic " + btoa(`${FTC_USERNAME}:${FTC_TOKEN}`);
-    const base = `https://ftc-events.firstinspires.org/v2.0/${currentFtcSeason}`;
-
-    document.getElementById('ftcTeamInfo').innerHTML = '<div class="empty-state">Loading team info…</div>';
-    document.getElementById('ftcEventsList').innerHTML = '';
+    const btn = document.getElementById('syncFtcBtn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
     document.getElementById('error').textContent = '';
 
     try {
-      const [teamRes, eventsRes] = await Promise.all([
-        fetch(`${base}/teams?teamNumber=${currentFtcTeamNumber}`, {
-          headers: { "Authorization": authHeader }
-        }),
-        fetch(`${base}/events?teamNumber=${currentFtcTeamNumber}`, {
-          headers: { "Authorization": authHeader }
-        })
-      ]);
+      const res = await fetch(`${FTC_PROXY_URL}/?season=${season}&teamNumber=${teamNumber}`);
 
-      if (!teamRes.ok) throw new Error(`Team lookup failed (${teamRes.status})`);
-      if (!eventsRes.ok) throw new Error(`Events lookup failed (${eventsRes.status})`);
+      if (!res.ok) {
+        throw new Error(`Proxy returned ${res.status}`);
+      }
 
-      const teamData = await teamRes.json();
-      const eventsData = await eventsRes.json();
+      const data = await res.json();
 
-      const team = teamData.teams?.[0];
-      document.getElementById('ftcTeamInfo').innerHTML = team ? `
-        <div class="ftc-team-card">
-          <div class="team-name">Team ${escapeHtml(String(team.teamNumber))} — ${escapeHtml(team.nameShort || team.nameFull || '')}</div>
-          <div class="team-location">${escapeHtml([team.city, team.stateProv, team.country].filter(Boolean).join(', '))}</div>
-        </div>
-      ` : '<div class="empty-state">Team not found for that number/season.</div>';
+      if (data.error) {
+        throw new Error(data.error);
+      }
 
-      const events = eventsData.events || [];
-      document.getElementById('ftcEventsList').innerHTML = events.length > 0
-        ? events.map(e => `
-            <div class="ftc-event-card">
-              <div class="ftc-event-name">${escapeHtml(e.name || 'Event')}</div>
-              <div class="ftc-event-meta">
-                ${escapeHtml(e.dateStart ? new Date(e.dateStart).toLocaleDateString() : '')}
-                ${e.venue ? ' · ' + escapeHtml(e.venue) : ''}
-                ${e.city ? ' · ' + escapeHtml(e.city) : ''}
-              </div>
-            </div>
-          `).join('')
-        : '<div class="empty-state">No events found for this team/season.</div>';
+      const ftcEvents = data.events?.events || [];
 
-      document.getElementById('eventsSetup').style.display = 'none';
-      document.getElementById('eventsContent').style.display = 'block';
+      if (ftcEvents.length === 0) {
+        document.getElementById('error').textContent = 'No events found for that team/season — check the FTC team number and season are correct.';
+        return;
+      }
+
+      // merge in, skipping duplicates already synced (by FTC event code)
+      const existingCodes = new Set(currentEvents.map(e => e.ftcEventCode).filter(Boolean));
+      const newOnes = ftcEvents
+        .filter(e => !existingCodes.has(e.code))
+        .map(e => ({
+          id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+          name: e.name || 'FTC Event',
+          date: e.dateStart ? e.dateStart.split('T')[0] : '',
+          location: [e.venue, e.city].filter(Boolean).join(', '),
+          ftcEventCode: e.code || null
+        }))
+        .filter(e => e.date); // skip anything without a usable date
+
+      currentEvents = [...currentEvents, ...newOnes];
+      await saveTeamField({ events: currentEvents });
+      renderEvents();
+
+      document.getElementById('ftcSyncForm').classList.remove('open');
+      document.getElementById('error').textContent = newOnes.length > 0
+        ? ''
+        : 'Synced, but all events were already added.';
 
     } catch (err) {
       console.error(err);
-      document.getElementById('error').textContent = 'Could not load FTC event data: ' + err.message + ' (this may be a CORS restriction from the FTC Events API — check the browser console for details).';
-      document.getElementById('ftcTeamInfo').innerHTML = '';
+      document.getElementById('error').textContent = 'FTC sync failed: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔄 Sync from FTC API';
     }
   };
+
+  window.toggleEventForm = function() {
+    document.getElementById('eventForm').classList.toggle('open');
+  };
+
+  window.saveEvent = async function() {
+    const name = document.getElementById('eventName').value.trim();
+    const date = document.getElementById('eventDate').value;
+    const location = document.getElementById('eventLocation').value.trim();
+
+    if (!name || !date) {
+      document.getElementById('error').textContent = 'Event needs a name and date.';
+      return;
+    }
+
+    const newEvent = {
+      id: Date.now().toString(),
+      name,
+      date,
+      location
+    };
+
+    currentEvents = [...currentEvents, newEvent];
+    await saveTeamField({ events: currentEvents });
+    renderEvents();
+
+    document.getElementById('eventForm').classList.remove('open');
+    document.getElementById('eventName').value = '';
+    document.getElementById('eventDate').value = '';
+    document.getElementById('eventLocation').value = '';
+  };
+
+  window.deleteEvent = async function(id) {
+    if (!confirm('Delete this event?')) return;
+    currentEvents = currentEvents.filter(e => e.id !== id);
+    await saveTeamField({ events: currentEvents });
+    renderEvents();
+  };
+
+  function renderEvents() {
+    const now = new Date();
+    const upcoming = currentEvents
+      .filter(e => new Date(e.date) >= new Date(now.toDateString()))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    const past = currentEvents
+      .filter(e => new Date(e.date) < new Date(now.toDateString()))
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // countdown to the soonest upcoming event
+    if (countdownTimer) clearInterval(countdownTimer);
+    if (upcoming.length > 0) {
+      startCountdown(upcoming[0]);
+    } else {
+      document.getElementById('nextEventCountdown').innerHTML = '';
+    }
+
+    const list = [...upcoming, ...past];
+    const listEl = document.getElementById('eventsListDisplay');
+
+    if (list.length === 0) {
+      listEl.innerHTML = '<div class="empty-state">No events added yet.</div>';
+      return;
+    }
+
+    listEl.innerHTML = list.map(e => {
+      const isPast = new Date(e.date) < new Date(now.toDateString());
+      return `
+        <div class="ftc-event-card ${isPast ? 'event-past' : ''}">
+          <div class="ftc-event-name">${escapeHtml(e.name)}</div>
+          <div class="ftc-event-meta">
+            ${escapeHtml(new Date(e.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }))}
+            ${e.location ? ' · ' + escapeHtml(e.location) : ''}
+          </div>
+          ${isCurrentUserLead ? `<button class="btn btn-danger" style="margin-top:8px;" onclick="deleteEvent('${e.id}')">Delete</button>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function startCountdown(event) {
+    const target = new Date(event.date + 'T00:00:00').getTime();
+
+    function tick() {
+      const now = Date.now();
+      const diff = target - now;
+
+      const el = document.getElementById('nextEventCountdown');
+
+      if (diff <= 0) {
+        el.innerHTML = `
+          <div class="countdown-card">
+            <div class="countdown-label">Happening now / today</div>
+            <div class="countdown-event-name">${escapeHtml(event.name)}</div>
+          </div>
+        `;
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      el.innerHTML = `
+        <div class="countdown-card">
+          <div class="countdown-label">Next event: ${escapeHtml(event.name)}</div>
+          <div class="countdown-timer">
+            <span>${days}<small>d</small></span>
+            <span>${String(hours).padStart(2, '0')}<small>h</small></span>
+            <span>${String(minutes).padStart(2, '0')}<small>m</small></span>
+            <span>${String(seconds).padStart(2, '0')}<small>s</small></span>
+          </div>
+        </div>
+      `;
+    }
+
+    tick();
+    countdownTimer = setInterval(tick, 1000);
+  }
 
   function escapeHtml(str) {
     const div = document.createElement('div');
