@@ -651,6 +651,13 @@
     border-radius: 6px;
     padding: 12px;
     margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .ftc-event-card:hover {
+    border-color: #ff7a3d;
+    background: #fff6ee;
   }
 
   .ftc-event-card.event-past {
@@ -666,6 +673,85 @@
     font-size: 12px;
     color: #4a5f74;
     margin-top: 4px;
+  }
+
+  .event-detail-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(14, 36, 56, 0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+  }
+
+  .event-detail-overlay.open {
+    display: flex;
+  }
+
+  .event-detail-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 28px;
+    max-width: 420px;
+    width: 100%;
+    position: relative;
+    box-shadow: 0 12px 32px rgba(14, 36, 56, 0.25);
+  }
+
+  .event-detail-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: none;
+    border: none;
+    font-size: 22px;
+    color: #8a99a8;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .event-detail-close:hover {
+    color: #0e2438;
+  }
+
+  .event-detail-title {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 16px;
+    padding-right: 24px;
+  }
+
+  .event-detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #eef3f7;
+    font-size: 13px;
+  }
+
+  .event-detail-row:last-of-type {
+    border-bottom: none;
+  }
+
+  .event-detail-label {
+    color: #6b7f92;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+
+  .event-detail-value {
+    text-align: right;
+    color: #0e2438;
+  }
+
+  .event-detail-livestream {
+    display: block;
+    text-align: center;
+    margin-top: 16px;
+    text-decoration: none;
   }
 
   #error {
@@ -853,6 +939,13 @@
 
   <div id="nextEventCountdown"></div>
   <div id="eventsListDisplay"></div>
+</div>
+
+<div class="event-detail-overlay" id="eventDetailOverlay" onclick="if(event.target===this) closeEventDetail()">
+  <div class="event-detail-card">
+    <button class="event-detail-close" onclick="closeEventDetail()">&times;</button>
+    <div id="eventDetailBody"></div>
+  </div>
 </div>
 
 <div id="error"></div>
@@ -1789,7 +1882,15 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
           id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
           name: e.name || 'FTC Event',
           date: e.dateStart ? e.dateStart.split('T')[0] : '',
+          dateEnd: e.dateEnd ? e.dateEnd.split('T')[0] : null,
           location: [e.venue, e.city].filter(Boolean).join(', '),
+          venue: e.venue || null,
+          address: e.address || null,
+          city: e.city || null,
+          stateProv: e.stateprov || null,
+          country: e.country || null,
+          liveStreamUrl: e.liveStreamUrl || null,
+          timezone: e.timezone || null,
           ftcEventCode: e.code || null
         }))
         .filter(e => e.date); // skip anything without a usable date
@@ -1878,16 +1979,54 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     listEl.innerHTML = list.map(e => {
       const isPast = new Date(e.date) < new Date(now.toDateString());
       return `
-        <div class="ftc-event-card ${isPast ? 'event-past' : ''}">
+        <div class="ftc-event-card ${isPast ? 'event-past' : ''}" onclick="openEventDetail('${e.id}')">
           <div class="ftc-event-name">${escapeHtml(e.name)}</div>
           <div class="ftc-event-meta">
             ${escapeHtml(new Date(e.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }))}
             ${e.location ? ' · ' + escapeHtml(e.location) : ''}
           </div>
-          ${isCurrentUserLead ? `<button class="btn btn-danger" style="margin-top:8px;" onclick="deleteEvent('${e.id}')">Delete</button>` : ''}
         </div>
       `;
     }).join('');
+  }
+
+  window.openEventDetail = function(id) {
+    const e = currentEvents.find(ev => ev.id === id);
+    if (!e) return;
+
+    const dateLabel = e.dateEnd && e.dateEnd !== e.date
+      ? `${formatDate(e.date)} – ${formatDate(e.dateEnd)}`
+      : formatDate(e.date);
+
+    const rows = [
+      ['Date', dateLabel],
+      ['Venue', e.venue],
+      ['Address', [e.address, e.city, e.stateProv, e.country].filter(Boolean).join(', ') || e.location],
+      ['Timezone', e.timezone],
+    ].filter(([, val]) => val);
+
+    const detailHtml = `
+      <div class="event-detail-title">${escapeHtml(e.name)}</div>
+      ${rows.map(([label, val]) => `
+        <div class="event-detail-row">
+          <span class="event-detail-label">${escapeHtml(label)}</span>
+          <span class="event-detail-value">${escapeHtml(val)}</span>
+        </div>
+      `).join('')}
+      ${e.liveStreamUrl ? `<a class="btn btn-primary event-detail-livestream" href="${escapeHtml(e.liveStreamUrl)}" target="_blank" rel="noopener">▶ Watch livestream</a>` : ''}
+      ${isCurrentUserLead ? `<button class="btn btn-danger" style="margin-top:14px;" onclick="deleteEvent('${e.id}'); closeEventDetail();">Delete event</button>` : ''}
+    `;
+
+    document.getElementById('eventDetailBody').innerHTML = detailHtml;
+    document.getElementById('eventDetailOverlay').classList.add('open');
+  };
+
+  window.closeEventDetail = function() {
+    document.getElementById('eventDetailOverlay').classList.remove('open');
+  };
+
+  function formatDate(dateStr) {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
   }
 
   function startCountdown(event) {
