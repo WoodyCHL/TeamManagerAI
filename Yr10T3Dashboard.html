@@ -696,8 +696,74 @@
     padding: 28px;
     max-width: 420px;
     width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
     position: relative;
     box-shadow: 0 12px 32px rgba(14, 36, 56, 0.25);
+  }
+
+  .match-card {
+    border: 1px solid #eef3f7;
+    border-radius: 6px;
+    padding: 10px;
+    margin-top: 8px;
+  }
+
+  .match-header {
+    font-size: 11px;
+    font-weight: bold;
+    color: #6b7f92;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+
+  .match-alliance {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+    border-radius: 4px;
+  }
+
+  .match-alliance.match-winner {
+    background: #fff6ee;
+  }
+
+  .match-alliance-label {
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #fff;
+    width: 32px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .alliance-red {
+    background: #c23b3b;
+  }
+
+  .alliance-blue {
+    background: #2f6fd6;
+  }
+
+  .match-teams {
+    flex: 1;
+  }
+
+  .match-score {
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+  }
+
+  .match-not-played {
+    font-size: 11px;
+    color: #8a99a8;
+    font-style: italic;
+    margin-top: 4px;
   }
 
   .event-detail-close {
@@ -1891,7 +1957,8 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
           country: e.country || null,
           liveStreamUrl: e.liveStreamUrl || null,
           timezone: e.timezone || null,
-          ftcEventCode: e.code || null
+          ftcEventCode: e.code || null,
+          ftcSeason: season
         }))
         .filter(e => e.date); // skip anything without a usable date
 
@@ -2014,12 +2081,79 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
         </div>
       `).join('')}
       ${e.liveStreamUrl ? `<a class="btn btn-primary event-detail-livestream" href="${escapeHtml(e.liveStreamUrl)}" target="_blank" rel="noopener">▶ Watch livestream</a>` : ''}
+      ${e.ftcEventCode ? `
+        <button class="btn btn-secondary" id="loadMatchesBtn" style="margin-top:14px; width:100%;" onclick="loadEventMatches('${escapeHtml(e.ftcEventCode)}', '${escapeHtml(e.ftcSeason || '')}')">📋 Load match results</button>
+        <div id="matchesContainer"></div>
+      ` : ''}
       ${isCurrentUserLead ? `<button class="btn btn-danger" style="margin-top:14px;" onclick="deleteEvent('${e.id}'); closeEventDetail();">Delete event</button>` : ''}
     `;
 
     document.getElementById('eventDetailBody').innerHTML = detailHtml;
     document.getElementById('eventDetailOverlay').classList.add('open');
   };
+
+  window.loadEventMatches = async function(eventCode, season) {
+    if (!season) {
+      document.getElementById('matchesContainer').innerHTML = '<div class="empty-state">No season on record for this event — try re-syncing it.</div>';
+      return;
+    }
+
+    const btn = document.getElementById('loadMatchesBtn');
+    btn.disabled = true;
+    btn.textContent = 'Loading matches…';
+
+    try {
+      const res = await fetch(`${FTC_PROXY_URL}/?season=${season}&eventCode=${eventCode}`);
+      if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const allMatches = [
+        ...(data.qual || []).map(m => ({ ...m, roundLabel: 'Qual' })),
+        ...(data.playoff || []).map(m => ({ ...m, roundLabel: 'Playoff' }))
+      ];
+
+      if (allMatches.length === 0) {
+        document.getElementById('matchesContainer').innerHTML = '<div class="empty-state">No match data yet — this event may not have started.</div>';
+        return;
+      }
+
+      document.getElementById('matchesContainer').innerHTML = allMatches.map(renderMatchCard).join('');
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('matchesContainer').innerHTML = `<div class="empty-state">Could not load matches: ${escapeHtml(err.message)}</div>`;
+    } finally {
+      btn.style.display = 'none';
+    }
+  };
+
+  function renderMatchCard(m) {
+    const redTeams = (m.teams || []).filter(t => t.station && t.station.startsWith('Red')).map(t => t.teamNumber);
+    const blueTeams = (m.teams || []).filter(t => t.station && t.station.startsWith('Blue')).map(t => t.teamNumber);
+
+    const played = m.scoreRedFinal !== null && m.scoreRedFinal !== undefined;
+    const redWon = played && m.scoreRedFinal > m.scoreBlueFinal;
+    const blueWon = played && m.scoreBlueFinal > m.scoreRedFinal;
+
+    return `
+      <div class="match-card">
+        <div class="match-header">${escapeHtml(m.roundLabel)} ${m.matchNumber != null ? '#' + m.matchNumber : ''}</div>
+        <div class="match-alliance ${redWon ? 'match-winner' : ''}">
+          <span class="match-alliance-label alliance-red">Red</span>
+          <span class="match-teams">${redTeams.join(', ') || '—'}</span>
+          <span class="match-score">${played ? m.scoreRedFinal : ''}</span>
+        </div>
+        <div class="match-alliance ${blueWon ? 'match-winner' : ''}">
+          <span class="match-alliance-label alliance-blue">Blue</span>
+          <span class="match-teams">${blueTeams.join(', ') || '—'}</span>
+          <span class="match-score">${played ? m.scoreBlueFinal : ''}</span>
+        </div>
+        ${!played ? '<div class="match-not-played">Not yet played</div>' : ''}
+      </div>
+    `;
+  }
 
   window.closeEventDetail = function() {
     document.getElementById('eventDetailOverlay').classList.remove('open');
