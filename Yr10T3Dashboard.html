@@ -1940,12 +1940,16 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
         return;
       }
 
-      // merge in, skipping duplicates already synced (by FTC event code)
-      const existingCodes = new Set(currentEvents.map(e => e.ftcEventCode).filter(Boolean));
-      const newOnes = ftcEvents
-        .filter(e => !existingCodes.has(e.code))
+      // merge: update any already-synced event with fresh data (patches
+      // old records missing newer fields like ftcSeason), and add any
+      // genuinely new ones
+      const existingByCode = new Map(
+        currentEvents.filter(e => e.ftcEventCode).map(e => [e.ftcEventCode, e])
+      );
+
+      const freshMapped = ftcEvents
         .map(e => ({
-          id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+          id: existingByCode.get(e.code)?.id || (Date.now().toString() + Math.random().toString(36).slice(2, 7)),
           name: e.name || 'FTC Event',
           date: e.dateStart ? e.dateStart.split('T')[0] : '',
           dateEnd: e.dateEnd ? e.dateEnd.split('T')[0] : null,
@@ -1962,7 +1966,11 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
         }))
         .filter(e => e.date); // skip anything without a usable date
 
-      currentEvents = [...currentEvents, ...newOnes];
+      const freshCodes = new Set(freshMapped.map(e => e.ftcEventCode));
+      const untouchedExisting = currentEvents.filter(e => !e.ftcEventCode || !freshCodes.has(e.ftcEventCode));
+      const newOnes = freshMapped.filter(e => !existingByCode.has(e.ftcEventCode));
+
+      currentEvents = [...untouchedExisting, ...freshMapped];
       await saveTeamField({ events: currentEvents });
       renderEvents();
 
