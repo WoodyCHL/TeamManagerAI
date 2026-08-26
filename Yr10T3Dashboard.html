@@ -766,6 +766,73 @@
     margin-top: 4px;
   }
 
+  .matches-section-label {
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7f92;
+    margin-top: 18px;
+    margin-bottom: 6px;
+    padding-top: 12px;
+    border-top: 1px solid #eef3f7;
+  }
+
+  .matches-section-label:first-child {
+    margin-top: 4px;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .rankings-table {
+    border: 1px solid #eef3f7;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .ranking-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    font-size: 12px;
+    border-bottom: 1px solid #eef3f7;
+  }
+
+  .ranking-row:last-child {
+    border-bottom: none;
+  }
+
+  .ranking-row.ranking-our-team {
+    background: #fff6ee;
+    font-weight: bold;
+  }
+
+  .ranking-place {
+    width: 22px;
+    color: #8a99a8;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+
+  .ranking-team {
+    flex: 1;
+  }
+
+  .ranking-record {
+    color: #4a5f74;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+  }
+
+  .ranking-rp {
+    font-size: 11px;
+    color: #6b7f92;
+    width: 50px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
   .event-detail-close {
     position: absolute;
     top: 14px;
@@ -2110,6 +2177,9 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     btn.disabled = true;
     btn.textContent = 'Loading matches…';
 
+    // our team's number, from the FTC sync settings saved earlier
+    const ourTeamNumber = parseInt(document.getElementById('ftcTeamNumber').value.trim(), 10) || null;
+
     try {
       const res = await fetch(`${FTC_PROXY_URL}/?season=${season}&eventCode=${eventCode}`);
       if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
@@ -2122,12 +2192,35 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
         ...(data.playoff || []).map(m => ({ ...m, roundLabel: 'Playoff' }))
       ];
 
-      if (allMatches.length === 0) {
+      const rankings = data.rankings || [];
+
+      if (allMatches.length === 0 && rankings.length === 0) {
         document.getElementById('matchesContainer').innerHTML = '<div class="empty-state">No match data yet — this event may not have started.</div>';
         return;
       }
 
-      document.getElementById('matchesContainer').innerHTML = allMatches.map(renderMatchCard).join('');
+      const isOurMatch = (m) => ourTeamNumber && (m.teams || []).some(t => t.teamNumber === ourTeamNumber);
+      const ourMatches = allMatches.filter(isOurMatch);
+      const otherMatches = allMatches.filter(m => !isOurMatch(m));
+
+      let html = '';
+
+      if (ourMatches.length > 0) {
+        html += `<div class="matches-section-label">Team ${ourTeamNumber}'s matches</div>`;
+        html += ourMatches.map(m => renderMatchCard(m, ourTeamNumber)).join('');
+      }
+
+      if (rankings.length > 0) {
+        html += `<div class="matches-section-label">Final standings</div>`;
+        html += renderRankingsTable(rankings, ourTeamNumber);
+      }
+
+      if (otherMatches.length > 0) {
+        html += `<div class="matches-section-label">All other matches</div>`;
+        html += otherMatches.map(m => renderMatchCard(m, ourTeamNumber)).join('');
+      }
+
+      document.getElementById('matchesContainer').innerHTML = html;
 
     } catch (err) {
       console.error(err);
@@ -2137,7 +2230,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     }
   };
 
-  function renderMatchCard(m) {
+  function renderMatchCard(m, ourTeamNumber) {
     const redTeams = (m.teams || []).filter(t => t.station && t.station.startsWith('Red')).map(t => t.teamNumber);
     const blueTeams = (m.teams || []).filter(t => t.station && t.station.startsWith('Blue')).map(t => t.teamNumber);
 
@@ -2145,22 +2238,40 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     const redWon = played && m.scoreRedFinal > m.scoreBlueFinal;
     const blueWon = played && m.scoreBlueFinal > m.scoreRedFinal;
 
+    const highlightTeam = (num) => num === ourTeamNumber ? `<strong>${num}</strong>` : num;
+
     return `
       <div class="match-card">
         <div class="match-header">${escapeHtml(m.roundLabel)} ${m.matchNumber != null ? '#' + m.matchNumber : ''}</div>
         <div class="match-alliance ${redWon ? 'match-winner' : ''}">
           <span class="match-alliance-label alliance-red">Red</span>
-          <span class="match-teams">${redTeams.join(', ') || '—'}</span>
+          <span class="match-teams">${redTeams.map(highlightTeam).join(', ') || '—'}</span>
           <span class="match-score">${played ? m.scoreRedFinal : ''}</span>
         </div>
         <div class="match-alliance ${blueWon ? 'match-winner' : ''}">
           <span class="match-alliance-label alliance-blue">Blue</span>
-          <span class="match-teams">${blueTeams.join(', ') || '—'}</span>
+          <span class="match-teams">${blueTeams.map(highlightTeam).join(', ') || '—'}</span>
           <span class="match-score">${played ? m.scoreBlueFinal : ''}</span>
         </div>
         ${!played ? '<div class="match-not-played">Not yet played</div>' : ''}
       </div>
     `;
+  }
+
+  function renderRankingsTable(rankings, ourTeamNumber) {
+    const sorted = [...rankings].sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
+
+    const rows = sorted.map(r => `
+      <div class="ranking-row ${r.teamNumber === ourTeamNumber ? 'ranking-our-team' : ''}">
+        <span class="ranking-place">${r.rank ?? '—'}</span>
+        <span class="ranking-team">Team ${r.teamNumber}</span>
+        <span class="ranking-record">${r.wins ?? 0}-${r.losses ?? 0}-${r.ties ?? 0}</span>
+        <span class="ranking-rp">${r.sortOrder1 ?? r.rankingPoints ?? ''} RP</span>
+      </div>
+    `).join('');
+
+    return `<div class="rankings-table">${rows}</div>`;
+
   }
 
   window.closeEventDetail = function() {
