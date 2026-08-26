@@ -548,6 +548,24 @@
     text-align: right;
   }
 
+  .note-ai-summary-box {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #eef3f7;
+  }
+
+  .note-summary-card {
+    background: #f8fafb;
+    border: 1px solid #d7e1e9;
+    border-left: 3px solid #2fd6c4;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #0e2438;
+  }
+
   .note-ai-tasks-box {
     margin-top: 20px;
     padding-top: 16px;
@@ -1026,6 +1044,11 @@
     <div id="noteBodyEditor" class="note-body-editor" contenteditable="true" oninput="scheduleNoteSave()"></div>
 
     <div class="note-save-status" id="noteSaveStatus"></div>
+
+    <div class="note-ai-summary-box">
+      <button class="btn btn-secondary" id="summarizeNoteBtn" onclick="summarizeNote()">✨ Summarize</button>
+      <div id="noteSummaryResult"></div>
+    </div>
 
     <div class="note-ai-tasks-box" id="noteAiTasksBox" style="display:none;">
       <button class="btn btn-secondary" id="extractTasksBtn" onclick="extractTasksFromNote()">✨ Generate tasks from this note</button>
@@ -1514,6 +1537,19 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
 {"title": "short task title, under 8 words", "description": "2-3 sentences, specific and actionable", "suggestedAssignee": "name of the best-suited member from the roster above, or empty string if none fit"}`;
   }
 
+  function buildNoteSummaryPrompt(noteTitle, noteText) {
+    return `Summarize these meeting notes from a student FTC robotics team, titled "${noteTitle || 'Untitled'}":
+
+"""
+${noteText}
+"""
+
+Write a concise summary in 2-4 sentences, plain prose (no bullet points, no markdown formatting). Focus on decisions made, problems raised, and anything the team needs to remember — skip small talk or scheduling chat.
+
+Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this shape:
+{"summary": "the summary text here"}`;
+  }
+
   function buildTaskExtractionPrompt(noteTitle, noteText) {
     const memberList = currentMembers
       .map(m => `- ${m.name}${m.role ? ` (role: ${m.role})` : ' (no role assigned)'}`)
@@ -1795,6 +1831,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
 
     document.getElementById('noteAiTasksBox').style.display = isCurrentUserLead ? 'block' : 'none';
     document.getElementById('extractedTasksList').innerHTML = '';
+    document.getElementById('noteSummaryResult').innerHTML = '';
 
     document.getElementById('notesListView').style.display = 'none';
     document.getElementById('notesEditorView').style.display = 'block';
@@ -1851,6 +1888,38 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
   // ---------------- AI: EXTRACT TASKS FROM NOTE ----------------
 
   let lastExtractedTasks = [];
+
+  window.summarizeNote = async function() {
+    const noteTitle = document.getElementById('noteTitleInput').value.trim();
+    const noteText = document.getElementById('noteBodyEditor').innerText.trim();
+
+    if (!noteText) {
+      document.getElementById('error').textContent = 'This note is empty — write something first.';
+      return;
+    }
+
+    const btn = document.getElementById('summarizeNoteBtn');
+    btn.disabled = true;
+    btn.textContent = 'Summarizing…';
+    document.getElementById('error').textContent = '';
+
+    try {
+      const parsed = await callAIForTask(buildNoteSummaryPrompt(noteTitle, noteText));
+      const summary = parsed.summary || '';
+
+      document.getElementById('noteSummaryResult').innerHTML = summary
+        ? `<div class="note-summary-card">${escapeHtml(summary)}</div>`
+        : '<div class="empty-state">No summary generated.</div>';
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('noteSummaryResult').innerHTML =
+        `<div class="empty-state">Could not summarize: ${escapeHtml(err.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '✨ Summarize';
+    }
+  };
 
   window.extractTasksFromNote = async function() {
     const noteTitle = document.getElementById('noteTitleInput').value.trim();
