@@ -1574,28 +1574,51 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
 [{"title": "short task title, under 8 words", "description": "1-2 sentences, specific and actionable", "subsystem": "one of: drivetrain, arm, sensors, programming, testing", "suggestedAssignee": "name of the best-suited member from the roster above, or empty string if none fit"}]`;
   }
 
-  // Free models on OpenRouter get renamed/deprecated fairly often.
-  // Try several known candidates in order and use whichever responds.
-  // If ALL of these ever fail, check openrouter.ai/models, filter by
-  // "Free", and swap in whatever's currently listed.
-  const CANDIDATE_MODELS = [
-    "openai/gpt-oss-20b:free",
-    "deepseek/deepseek-chat-v3.1:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "google/gemma-2-9b-it:free",
-    "qwen/qwen-2.5-72b-instruct:free",
-    "mistralai/mistral-7b-instruct:free",
-    "microsoft/phi-3-mini-128k-instruct:free"
-  ];
+  // Free models on OpenRouter get renamed/deprecated very often — hardcoding
+  // specific model names keeps going stale. Instead, ask OpenRouter's own
+  // /models endpoint for whatever's actually free right now, cache that
+  // list for this session, and try those.
+  let cachedFreeModels = null;
+
+  async function getFreeModels() {
+    if (cachedFreeModels) return cachedFreeModels;
+
+    const res = await fetch("https://openrouter.ai/api/v1/models");
+    if (!res.ok) throw new Error(`Could not fetch model list (${res.status})`);
+
+    const data = await res.json();
+    const free = (data.data || [])
+      .filter(m => m.id.endsWith(':free') || (m.pricing?.prompt === "0" && m.pricing?.completion === "0"))
+      .map(m => m.id);
+
+    if (free.length === 0) throw new Error('No free models currently available on OpenRouter.');
+
+    // put a few known-solid general-purpose ones first if they're present,
+    // since some free models are narrow/specialized and won't follow
+    // instructions as reliably
+    const preferredOrder = ['openai/gpt-oss-20b:free', 'deepseek/deepseek-chat-v3.1:free', 'meta-llama/llama-3.3-70b-instruct:free'];
+    free.sort((a, b) => {
+      const aIdx = preferredOrder.indexOf(a);
+      const bIdx = preferredOrder.indexOf(b);
+      if (aIdx === -1 && bIdx === -1) return 0;
+      if (aIdx === -1) return 1;
+      if (bIdx === -1) return -1;
+      return aIdx - bIdx;
+    });
+
+    cachedFreeModels = free.slice(0, 10); // cap how many we'll try per call
+    return cachedFreeModels;
+  }
 
   // Shared caller used by both first-generation and refinement —
-  // tries each candidate model in turn and returns the parsed JSON.
+  // tries each currently-free model in turn and returns the parsed JSON.
   async function callAIForTask(promptText) {
+    const models = await getFreeModels();
+
     let res = null;
     let lastError = null;
 
-    for (const model of CANDIDATE_MODELS) {
+    for (const model of models) {
       res = await fetch(
         "https://openrouter.ai/api/v1/chat/completions",
         {
