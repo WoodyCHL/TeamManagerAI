@@ -2336,7 +2336,13 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
       const ourMatches = allMatches.filter(isOurMatch);
       const otherMatches = allMatches.filter(m => !isOurMatch(m));
 
-      lastLoadedMatchData = { ourMatches, rankings, ourTeamNumber };
+      lastLoadedMatchData = {
+        ourMatches,
+        rankings,
+        ourTeamNumber,
+        detailedScoresQual: data.detailedScoresQual,
+        detailedScoresPlayoff: data.detailedScoresPlayoff
+      };
 
       let html = '';
 
@@ -2369,7 +2375,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     }
   };
 
-  function buildPerformancePrompt(ourMatches, rankingRow, teamNumber) {
+  function buildPerformancePrompt(ourMatches, rankingRow, teamNumber, detailedScoresForOurMatches) {
     const matchSummary = ourMatches.map(m => {
       const isRed = (m.teams || []).some(t => t.teamNumber === teamNumber && t.station?.startsWith('Red'));
       const ourScore = isRed ? m.scoreRedFinal : m.scoreBlueFinal;
@@ -2391,21 +2397,40 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
       ? `Final ranking: #${rankingRow.rank} with a record of ${rankingRow.wins ?? 0}-${rankingRow.losses ?? 0}-${rankingRow.ties ?? 0}.`
       : 'No final ranking data available.';
 
+    const detailedScoreBlock = detailedScoresForOurMatches && detailedScoresForOurMatches.length > 0
+      ? `\nDetailed per-match scoring data (raw, from the official FTC scoring system — field names vary by season/game, use whatever is present, e.g. fouls, autonomous points, teleop points, endgame points):\n${JSON.stringify(detailedScoresForOurMatches, null, 1)}\n`
+      : '';
+
     return `You are reviewing an FTC (FIRST Tech Challenge) team's competition performance for team ${teamNumber}, based only on this match data:
 
 ${matchSummary}
 
 ${rankingLine}
-
-Write a short, honest performance review based ONLY on the scores and win/loss pattern above — do not invent specific mechanical or strategic details you have no evidence for (e.g. don't claim their intake was slow or their autonomous failed unless the data implies it). Base your analysis on patterns like: scoring consistency across matches, how close matches were, win/loss trends, and overall competitiveness of their scores relative to opponents.
+${detailedScoreBlock}
+Write a short, honest performance review based ONLY on the data above — do not invent specific mechanical or strategic details you have no evidence for. If the detailed scoring data includes fields like fouls, autonomous points, or endgame points, use them to give more specific insight (e.g. "conceded fouls in 2 of 3 matches" or "consistently strong autonomous scores"). If no detailed data is present, base your analysis only on final scores and win/loss patterns — scoring consistency, how close matches were, and competitiveness relative to opponents.
 
 Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this shape:
 {"wentWell": ["short point 1", "short point 2"], "toImprove": ["short point 1", "short point 2"]}`;
   }
 
+  function extractDetailedScoresForOurMatches(ourMatches, detailedScoresQual, detailedScoresPlayoff) {
+    const qualMatchNumbers = new Set(ourMatches.filter(m => m.roundLabel === 'Qual').map(m => m.matchNumber));
+    const playoffMatchNumbers = new Set(ourMatches.filter(m => m.roundLabel === 'Playoff').map(m => m.matchNumber));
+
+    const fromQual = (detailedScoresQual?.matchScores || [])
+      .filter(s => qualMatchNumbers.has(s.matchNumber))
+      .map(s => ({ round: 'Qual', ...s }));
+
+    const fromPlayoff = (detailedScoresPlayoff?.matchScores || [])
+      .filter(s => playoffMatchNumbers.has(s.matchNumber))
+      .map(s => ({ round: 'Playoff', ...s }));
+
+    return [...fromQual, ...fromPlayoff];
+  }
+
   window.analyzeTeamPerformance = async function() {
     if (!lastLoadedMatchData) return;
-    const { ourMatches, rankings, ourTeamNumber } = lastLoadedMatchData;
+    const { ourMatches, rankings, ourTeamNumber, detailedScoresQual, detailedScoresPlayoff } = lastLoadedMatchData;
 
     const btn = document.getElementById('analyzePerfBtn');
     btn.disabled = true;
@@ -2414,7 +2439,8 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
 
     try {
       const rankingRow = rankings.find(r => r.teamNumber === ourTeamNumber) || null;
-      const parsed = await callAIForTask(buildPerformancePrompt(ourMatches, rankingRow, ourTeamNumber));
+      const detailedScores = extractDetailedScoresForOurMatches(ourMatches, detailedScoresQual, detailedScoresPlayoff);
+      const parsed = await callAIForTask(buildPerformancePrompt(ourMatches, rankingRow, ourTeamNumber, detailedScores));
 
       const wentWell = parsed.wentWell || [];
       const toImprove = parsed.toImprove || [];
