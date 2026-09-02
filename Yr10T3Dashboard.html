@@ -890,6 +890,21 @@
     margin-bottom: 3px;
   }
 
+  .role-rec-card {
+    background: #fff6ee;
+    border: 1px solid #ffd9bd;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    font-size: 12px;
+  }
+
+  .role-rec-label {
+    font-weight: bold;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+
   .event-detail-close {
     position: absolute;
     top: 14px;
@@ -2407,10 +2422,19 @@ ${matchSummary}
 
 ${rankingLine}
 ${detailedScoreBlock}
-Write a short, honest performance review based ONLY on the data above — do not invent specific mechanical or strategic details you have no evidence for. If the detailed scoring data includes fields like fouls, autonomous points, or endgame points, use them to give more specific insight (e.g. "conceded fouls in 2 of 3 matches" or "consistently strong autonomous scores"). If no detailed data is present, base your analysis only on final scores and win/loss patterns — scoring consistency, how close matches were, and competitiveness relative to opponents.
+First, identify 2-3 things that went well and 2-3 things to improve, based ONLY on the data above — do not invent specific mechanical or strategic details you have no evidence for.
+
+Then, turn each "to improve" point into a concrete NEXT ACTION assigned to whichever team role is actually responsible for fixing it:
+- "coder" (programming/autonomous routines/driver-control code) — e.g. autonomous scoring failures, inconsistent teleop control, sensor/vision issues
+- "builder" (mechanical design/construction) — e.g. a mechanism causing repeated fouls from over-extension, jams, reliability failures, intake/scoring mechanism issues
+- "driver" (driving strategy/execution during matches) — e.g. positioning errors, avoidable fouls from careless driving, poor time management in teleop
+- "maintenance" (pit crew/between-match upkeep) — e.g. performance dropping off in later matches (worn parts, battery not swapped, loose connections), match-to-match reliability decline
+
+Only include a role if the data actually gives evidence pointing to it — don't force all four categories to have content if the data doesn't support it. Each recommendation must be a specific, actionable next step (e.g. "Review the autonomous placement routine for Qual #13 and #18 — both scored zero classified artifacts" not "improve autonomous").
 
 Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this shape:
-{"wentWell": ["short point 1", "short point 2"], "toImprove": ["short point 1", "short point 2"]}`;
+{"wentWell": ["point 1", "point 2"], "toImprove": ["point 1", "point 2"], "recommendations": {"coder": ["action 1"], "builder": ["action 1"], "driver": ["action 1"], "maintenance": ["action 1"]}}
+Omit a role's array entirely (don't include the key) if there's no evidence-based recommendation for it.`;
   }
 
   function extractDetailedScoresForOurMatches(ourMatches, detailedScoresQual, detailedScoresPlayoff) {
@@ -2444,6 +2468,23 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
 
       const wentWell = parsed.wentWell || [];
       const toImprove = parsed.toImprove || [];
+      const recommendations = parsed.recommendations || {};
+
+      const roleLabels = {
+        coder: '💻 Coder',
+        builder: '🔧 Builder',
+        driver: '🎮 Driver',
+        maintenance: '🛠️ Maintenance'
+      };
+
+      const recsHtml = Object.entries(roleLabels)
+        .filter(([key]) => recommendations[key] && recommendations[key].length > 0)
+        .map(([key, label]) => `
+          <div class="role-rec-card">
+            <div class="role-rec-label">${label}</div>
+            <ul class="perf-list">${recommendations[key].map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>
+          </div>
+        `).join('');
 
       document.getElementById('perfAnalysisResult').innerHTML = `
         <div class="perf-analysis-card">
@@ -2452,6 +2493,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this
           <div class="perf-section-label perf-improve">What to improve</div>
           <ul class="perf-list">${toImprove.map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>
         </div>
+        ${recsHtml ? `<div class="matches-section-label">Next steps by role</div>${recsHtml}` : ''}
       `;
 
     } catch (err) {
