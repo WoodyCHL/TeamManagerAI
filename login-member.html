@@ -190,6 +190,14 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
+  // Hashes a password with SHA-256 before it's ever stored or compared,
+  // so the database never holds a readable password.
+  async function hashPassword(password) {
+    const data = new TextEncoder().encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   const urlParams = new URLSearchParams(window.location.search);
   const teamId = urlParams.get('team');
 
@@ -264,7 +272,7 @@
         return;
       }
 
-      if (match.password !== password) {
+      if (match.passwordHash !== await hashPassword(password)) {
         showError('Incorrect password.');
         return;
       }
@@ -308,10 +316,11 @@
       }
 
       const isFirstMember = members.length === 0;
+      const passwordHash = await hashPassword(password);
 
       const newMember = {
         name,
-        password,
+        passwordHash,
         isAdmin: isFirstMember,
         role: null
       };
