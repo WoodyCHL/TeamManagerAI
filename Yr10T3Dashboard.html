@@ -107,6 +107,15 @@
     font-weight: bold;
   }
 
+  .menu-item-logout {
+    border-top: 1px solid #eef3f7;
+    color: #c23b3b;
+  }
+
+  .menu-item-logout:hover {
+    background: #fff0ef;
+  }
+
   .menu-icon {
     font-size: 18px;
     width: 22px;
@@ -991,6 +1000,9 @@
     <div class="menu-item" data-view="events" onclick="switchView('events')">
       <span class="menu-icon">🏆</span> Events
     </div>
+    <div class="menu-item menu-item-logout" onclick="logout()">
+      <span class="menu-icon">🚪</span> Log out
+    </div>
   </div>
 </div>
 
@@ -1222,6 +1234,13 @@
     document.querySelector(`.menu-item[data-view="${view}"]`).classList.add('active');
 
     document.getElementById('menuDropdown').classList.remove('open');
+  };
+
+  window.logout = function() {
+    if (!confirm('Log out? You\'ll need your team name, password, and personal password to sign back in.')) return;
+    localStorage.removeItem('teamId');
+    localStorage.removeItem('memberName');
+    window.location.href = 'index.html';
   };
 
   document.addEventListener('click', (e) => {
