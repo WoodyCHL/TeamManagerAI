@@ -206,6 +206,14 @@
   const db = getFirestore(app);
   const teamsRef = collection(db, "teams");
 
+  // Hashes a password with SHA-256 before it's ever stored or compared,
+  // so the database never holds a readable password.
+  async function hashPassword(password) {
+    const data = new TextEncoder().encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   window.showForm = function(which) {
     document.getElementById('createForm').style.display = which === 'create' ? 'block' : 'none';
     document.getElementById('joinForm').style.display = which === 'join' ? 'block' : 'none';
@@ -246,10 +254,12 @@
         return;
       }
 
+      const passwordHash = await hashPassword(password);
+
       const docRef = await addDoc(teamsRef, {
         name,
         nameLower: name.toLowerCase(),
-        password,
+        passwordHash,
         members: [],
         tasks: [],
         notes: []
@@ -285,7 +295,7 @@
       const teamDoc = found.docs[0];
       const teamData = teamDoc.data();
 
-      if (teamData.password !== password) {
+      if (teamData.passwordHash !== await hashPassword(password)) {
         showError('Incorrect password.');
         return;
       }
