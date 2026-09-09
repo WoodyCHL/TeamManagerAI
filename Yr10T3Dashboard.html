@@ -1209,6 +1209,12 @@
     <button class="btn btn-secondary" id="loadSeasonBtn" style="display:none;" onclick="loadSeasonInfo()">🚀 Check kickoff date</button>
   </div>
   <div id="seasonKickoffCard"></div>
+
+  <div class="panel-head" style="margin-top:20px;">
+    <h2>Off-season prep</h2>
+    <button class="btn btn-primary" id="beforeKickoffBtn" onclick="analyzeBeforeKickoff()">🎯 Before Kickoff</button>
+  </div>
+  <div id="beforeKickoffResult"></div>
 </div>
 
 <div class="event-detail-overlay" id="eventDetailOverlay" onclick="if(event.target===this) closeEventDetail()">
@@ -2358,6 +2364,57 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     } finally {
       btn.disabled = false;
       btn.textContent = '📅 Generate schedule';
+    }
+  };
+
+  // ---------------- BEFORE KICKOFF (off-season prep advisor) ----------------
+
+  function buildBeforeKickoffPrompt(taskSummary, noteSummary, gameName) {
+    return `You are helping a student FTC (FIRST Tech Challenge) robotics team prepare during the off-season, ${gameName ? `before the "${gameName}" season kicks off` : 'before the next season kicks off'}.
+
+Here is a summary of their current tasks (title, subsystem, status):
+${taskSummary || '(no tasks logged)'}
+
+Here is a summary of their recent meeting notes:
+${noteSummary || '(no meeting notes logged)'}
+
+Based on this information, give practical advice for what the team should do before the next kickoff to be well-prepared. Where the data supports it, reference specific incomplete tasks, recurring problems mentioned in notes, or gaps you notice. If there isn't much data to go on, give general off-season FTC prep advice instead of inventing specifics — things like reviewing last season's robot for reliability issues, prototyping general-purpose mechanisms, training new/junior members, organizing the parts inventory, or updating the engineering notebook.
+
+Respond with ONLY valid JSON, no markdown fences, no extra text, in exactly this shape:
+{"recommendations": ["short actionable point 1", "short actionable point 2", "short actionable point 3"]}`;
+  }
+
+  window.analyzeBeforeKickoff = async function() {
+    const btn = document.getElementById('beforeKickoffBtn');
+    btn.disabled = true;
+    btn.textContent = 'Reviewing your team\'s data…';
+    document.getElementById('error').textContent = '';
+
+    try {
+      const taskSummary = currentTasks
+        .map(t => `- [${t.status}] ${t.title} (${t.subsystem || 'general'})`)
+        .join('\n');
+
+      const noteSummary = currentNotes
+        .map(n => `- "${n.title || 'Untitled'}": ${(n.body || '').replace(/<[^>]+>/g, ' ').trim().slice(0, 300)}`)
+        .join('\n');
+
+      const gameName = currentSeasonInfo?.gameName || null;
+
+      const parsed = await callAIForTask(buildBeforeKickoffPrompt(taskSummary, noteSummary, gameName));
+      const recommendations = parsed.recommendations || [];
+
+      document.getElementById('beforeKickoffResult').innerHTML = recommendations.length > 0
+        ? `<div class="perf-analysis-card"><ul class="perf-list">${recommendations.map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul></div>`
+        : '<div class="empty-state">No recommendations generated.</div>';
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('beforeKickoffResult').innerHTML =
+        `<div class="empty-state">Could not generate advice: ${escapeHtml(err.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🎯 Before Kickoff';
     }
   };
 
