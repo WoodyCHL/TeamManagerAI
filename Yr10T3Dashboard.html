@@ -1030,6 +1030,9 @@
     <div class="menu-item" data-view="events" onclick="switchView('events')">
       <span class="menu-icon">🏆</span> Events
     </div>
+    <div class="menu-item" data-view="countdown" onclick="switchView('countdown')">
+      <span class="menu-icon">⏱️</span> Countdown
+    </div>
     <div class="menu-item menu-item-logout" onclick="logout()">
       <span class="menu-icon">🚪</span> Log out
     </div>
@@ -1157,12 +1160,6 @@
 <!-- EVENTS -->
 <div class="panel" id="panel-events">
   <div class="panel-head">
-    <h2>Season</h2>
-    <button class="btn btn-secondary" id="loadSeasonBtn" style="display:none;" onclick="loadSeasonInfo()">🚀 Check kickoff date</button>
-  </div>
-  <div id="seasonKickoffCard"></div>
-
-  <div class="panel-head" style="margin-top:20px;">
     <h2>Upcoming events</h2>
     <span>
       <button class="btn btn-secondary" id="syncFtcBtn" style="display:none;" onclick="toggleFtcSyncForm()">🔄 Sync from FTC API</button>
@@ -1203,6 +1200,15 @@
     <button class="btn btn-primary" id="generatePlanBtn" style="display:none;" onclick="generateSeasonPlan()">📅 Generate schedule</button>
   </div>
   <div id="seasonPlanResult"></div>
+</div>
+
+<!-- COUNTDOWN -->
+<div class="panel" id="panel-countdown">
+  <div class="panel-head">
+    <h2>Season kickoff</h2>
+    <button class="btn btn-secondary" id="loadSeasonBtn" style="display:none;" onclick="loadSeasonInfo()">🚀 Check kickoff date</button>
+  </div>
+  <div id="seasonKickoffCard"></div>
 </div>
 
 <div class="event-detail-overlay" id="eventDetailOverlay" onclick="if(event.target===this) closeEventDetail()">
