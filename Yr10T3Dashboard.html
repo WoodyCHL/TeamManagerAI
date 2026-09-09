@@ -673,6 +673,36 @@
     margin-left: 2px;
   }
 
+  .season-plan-card {
+    margin-top: 10px;
+  }
+
+  .season-phase-row {
+    border: 1px solid #eef3f7;
+    border-left: 3px solid #ff7a3d;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+
+  .season-phase-name {
+    font-weight: bold;
+    font-size: 13px;
+  }
+
+  .season-phase-dates {
+    font-size: 11px;
+    color: #6b7f92;
+    font-family: 'Courier New', monospace;
+    margin-top: 2px;
+  }
+
+  .season-phase-desc {
+    font-size: 12px;
+    color: #4a5f74;
+    margin-top: 4px;
+  }
+
   .ftc-event-card {
     border: 1px solid #eef3f7;
     border-radius: 6px;
@@ -1127,6 +1157,12 @@
 <!-- EVENTS -->
 <div class="panel" id="panel-events">
   <div class="panel-head">
+    <h2>Season</h2>
+    <button class="btn btn-secondary" id="loadSeasonBtn" style="display:none;" onclick="loadSeasonInfo()">🚀 Check kickoff date</button>
+  </div>
+  <div id="seasonKickoffCard"></div>
+
+  <div class="panel-head" style="margin-top:20px;">
     <h2>Upcoming events</h2>
     <span>
       <button class="btn btn-secondary" id="syncFtcBtn" style="display:none;" onclick="toggleFtcSyncForm()">🔄 Sync from FTC API</button>
@@ -1161,6 +1197,12 @@
 
   <div id="nextEventCountdown"></div>
   <div id="eventsListDisplay"></div>
+
+  <div class="panel-head" style="margin-top:20px;">
+    <h2>Build season plan</h2>
+    <button class="btn btn-primary" id="generatePlanBtn" style="display:none;" onclick="generateSeasonPlan()">📅 Generate schedule</button>
+  </div>
+  <div id="seasonPlanResult"></div>
 </div>
 
 <div class="event-detail-overlay" id="eventDetailOverlay" onclick="if(event.target===this) closeEventDetail()">
@@ -1209,6 +1251,7 @@
   let currentTasks = [];
   let currentNotes = [];
   let currentEvents = [];
+  let currentSeasonInfo = null;
   let teamRef = null;
   let isCurrentUserLead = false;
 
@@ -1281,10 +1324,17 @@
         document.getElementById('createTaskBtn').style.display = 'inline-block';
         document.getElementById('addEventBtn').style.display = 'inline-block';
         document.getElementById('syncFtcBtn').style.display = 'inline-block';
+        document.getElementById('loadSeasonBtn').style.display = 'inline-block';
+        document.getElementById('generatePlanBtn').style.display = 'inline-block';
       }
 
       if (team.ftcTeamNumber) document.getElementById('ftcTeamNumber').value = team.ftcTeamNumber;
       if (team.ftcSeason) document.getElementById('ftcSeason').value = team.ftcSeason;
+
+      if (team.seasonKickoff) {
+        currentSeasonInfo = { gameName: team.seasonGameName, kickoff: team.seasonKickoff };
+        renderKickoffCard();
+      }
 
       renderRoster();
       renderTasks();
@@ -2134,6 +2184,175 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
 
   window.toggleFtcSyncForm = function() {
     document.getElementById('ftcSyncForm').classList.toggle('open');
+  };
+
+  window.loadSeasonInfo = async function() {
+    const season = document.getElementById('ftcSeason').value.trim();
+    if (!season) {
+      document.getElementById('error').textContent = 'Enter a season year first (in the FTC sync section below).';
+      return;
+    }
+
+    const btn = document.getElementById('loadSeasonBtn');
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    document.getElementById('error').textContent = '';
+
+    try {
+      const res = await fetch(`${FTC_PROXY_URL}/?season=${season}&seasonInfo=1`);
+      if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      currentSeasonInfo = data; // { gameName, kickoff, eventCount, ... }
+      await saveTeamField({ seasonGameName: data.gameName, seasonKickoff: data.kickoff });
+
+      renderKickoffCard();
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('seasonKickoffCard').innerHTML =
+        `<div class="empty-state">Could not load season info: ${escapeHtml(err.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🚀 Check kickoff date';
+    }
+  };
+
+  let kickoffCountdownTimer = null;
+
+  function renderKickoffCard() {
+    if (!currentSeasonInfo || !currentSeasonInfo.kickoff) {
+      document.getElementById('seasonKickoffCard').innerHTML = '';
+      return;
+    }
+
+    const kickoffTime = new Date(currentSeasonInfo.kickoff).getTime();
+
+    if (kickoffCountdownTimer) clearInterval(kickoffCountdownTimer);
+
+    function tick() {
+      const diff = kickoffTime - Date.now();
+      const el = document.getElementById('seasonKickoffCard');
+
+      if (diff <= 0) {
+        el.innerHTML = `
+          <div class="countdown-card">
+            <div class="countdown-label">${escapeHtml(currentSeasonInfo.gameName || 'This season')} has kicked off!</div>
+          </div>
+        `;
+        clearInterval(kickoffCountdownTimer);
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+      el.innerHTML = `
+        <div class="countdown-card">
+          <div class="countdown-label">Kickoff — ${escapeHtml(currentSeasonInfo.gameName || 'New season')}</div>
+          <div class="countdown-timer">
+            <span>${days}<small>d</small></span>
+            <span>${String(hours).padStart(2, '0')}<small>h</small></span>
+          </div>
+        </div>
+      `;
+    }
+
+    tick();
+    kickoffCountdownTimer = setInterval(tick, 60000);
+  }
+
+  // ---------------- BUILD SEASON PLAN ----------------
+
+  const BUILD_PHASES = [
+    { name: 'Kickoff & Strategy', pct: 0.05, subsystem: 'general', desc: 'Watch kickoff, analyze the game, brainstorm robot strategy and scoring priorities.' },
+    { name: 'Design', pct: 0.15, subsystem: 'general', desc: 'CAD/prototype the drivetrain and scoring mechanisms, finalize robot concept.' },
+    { name: 'Build', pct: 0.30, subsystem: 'drivetrain', desc: 'Construct chassis, drivetrain, and primary scoring mechanisms.' },
+    { name: 'Programming', pct: 0.20, subsystem: 'programming', desc: 'Write and tune autonomous routines and driver-control code.' },
+    { name: 'Testing & Iteration', pct: 0.20, subsystem: 'testing', desc: 'Full-robot testing, driver practice, fix reliability issues found during testing.' },
+    { name: 'Competition Prep', pct: 0.10, subsystem: 'testing', desc: 'Finalize robot, prepare engineering notebook, pack pit supplies, practice matches.' }
+  ];
+
+  window.generateSeasonPlan = async function() {
+    if (!currentSeasonInfo || !currentSeasonInfo.kickoff) {
+      document.getElementById('error').textContent = 'Load the kickoff date first (above) before generating a schedule.';
+      return;
+    }
+
+    const upcoming = [...currentEvents]
+      .filter(e => new Date(e.date) >= new Date())
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    if (upcoming.length === 0) {
+      document.getElementById('error').textContent = 'Add or sync at least one upcoming competition date first — the schedule needs an end target.';
+      return;
+    }
+
+    const startDate = new Date(currentSeasonInfo.kickoff);
+    const endDate = new Date(upcoming[0].date + 'T00:00:00');
+    const totalDays = Math.max(1, Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)));
+
+    const btn = document.getElementById('generatePlanBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    document.getElementById('error').textContent = '';
+
+    try {
+      let cursor = new Date(startDate);
+      const phaseRows = [];
+      const newTasks = [];
+
+      for (const phase of BUILD_PHASES) {
+        const phaseDays = Math.max(1, Math.round(totalDays * phase.pct));
+        const phaseStart = new Date(cursor);
+        const phaseEnd = new Date(cursor);
+        phaseEnd.setDate(phaseEnd.getDate() + phaseDays);
+
+        phaseRows.push({
+          name: phase.name,
+          start: phaseStart.toISOString().split('T')[0],
+          end: phaseEnd.toISOString().split('T')[0],
+          desc: phase.desc
+        });
+
+        newTasks.push({
+          id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+          title: `${phase.name} phase`,
+          description: `${phase.desc} Target window: ${phaseStart.toLocaleDateString()} – ${phaseEnd.toLocaleDateString()}.`,
+          subsystem: phase.subsystem,
+          assignedNames: [],
+          status: 'todo'
+        });
+
+        cursor = phaseEnd;
+      }
+
+      currentTasks = [...currentTasks, ...newTasks];
+      await saveTeamField({ tasks: currentTasks });
+      renderTasks();
+
+      document.getElementById('seasonPlanResult').innerHTML = `
+        <div class="season-plan-card">
+          ${phaseRows.map(p => `
+            <div class="season-phase-row">
+              <div class="season-phase-name">${escapeHtml(p.name)}</div>
+              <div class="season-phase-dates">${escapeHtml(new Date(p.start).toLocaleDateString())} – ${escapeHtml(new Date(p.end).toLocaleDateString())}</div>
+              <div class="season-phase-desc">${escapeHtml(p.desc)}</div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="empty-state" style="margin-top:8px;">Added ${newTasks.length} phase tasks to your Tasks tab — assign them out as needed.</div>
+      `;
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById('error').textContent = 'Could not generate schedule: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📅 Generate schedule';
+    }
   };
 
   window.syncFromFtcApi = async function() {
