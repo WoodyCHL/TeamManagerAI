@@ -151,6 +151,121 @@
     margin: 0;
   }
 
+  /* overview */
+  .overview-greeting h1 {
+    font-size: 20px;
+    margin: 0;
+  }
+
+  .overview-greeting .team-meta {
+    font-size: 13px;
+    color: #4a5f74;
+    margin-top: 4px;
+  }
+
+  .overview-stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 10px;
+    margin-top: 20px;
+  }
+
+  .stat-card {
+    background: #f8fafb;
+    border: 1px solid #d7e1e9;
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+  }
+
+  .stat-number {
+    font-size: 28px;
+    font-weight: bold;
+    color: #0e2438;
+    font-family: 'Courier New', monospace;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: #6b7f92;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-top: 2px;
+  }
+
+  .stat-breakdown {
+    font-size: 10px;
+    color: #8a99a8;
+    margin-top: 4px;
+  }
+
+  .overview-highlight-card {
+    background: #0e2438;
+    color: #eef3f7;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .overview-highlight-card:hover {
+    background: #123049;
+  }
+
+  .overview-highlight-label {
+    font-size: 11px;
+    color: #9fb4c7;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .overview-highlight-value {
+    font-size: 16px;
+    font-weight: bold;
+    margin-top: 4px;
+  }
+
+  .overview-highlight-sub {
+    font-size: 12px;
+    color: #9fb4c7;
+    margin-top: 2px;
+  }
+
+  .overview-section-label {
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7f92;
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
+
+  .overview-pinned-note {
+    background: #fff6ee;
+    border: 1px solid #ffd9bd;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+
+  .overview-pinned-note:hover {
+    border-color: #ff7a3d;
+  }
+
+  .overview-quicklinks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid #eef3f7;
+  }
+
   .btn {
     font-family: Arial, sans-serif;
     font-size: 13px;
@@ -1018,6 +1133,9 @@
   </button>
 
   <div class="menu-dropdown" id="menuDropdown">
+    <div class="menu-item" data-view="overview" onclick="switchView('overview')">
+      <span class="menu-icon">🏠</span> Overview
+    </div>
     <div class="menu-item" data-view="roster" onclick="switchView('roster')">
       <span class="menu-icon">👥</span> Team roster
     </div>
@@ -1037,6 +1155,21 @@
       <span class="menu-icon">🚪</span> Log out
     </div>
   </div>
+</div>
+
+<!-- OVERVIEW -->
+<div class="panel" id="panel-overview">
+  <div class="overview-greeting" id="overviewGreeting"></div>
+
+  <div class="overview-stats-row" id="overviewStats"></div>
+
+  <div id="overviewNextEvent"></div>
+  <div id="overviewKickoff"></div>
+
+  <div class="overview-section-label">Pinned notes</div>
+  <div id="overviewPinnedNotes"></div>
+
+  <div class="overview-quicklinks" id="overviewQuickLinks"></div>
 </div>
 
 <!-- ROSTER -->
@@ -1352,8 +1485,9 @@
       renderTasks();
       renderNotes();
       renderEvents();
+      renderOverview(team.name);
 
-      switchView('roster');
+      switchView('overview');
 
     } catch (err) {
       console.error(err);
@@ -1371,6 +1505,72 @@
   }
 
   // ---------------- ROSTER ----------------
+
+  function renderOverview(teamName) {
+    document.getElementById('overviewGreeting').innerHTML =
+      `<h1>Welcome back${myName ? ', ' + escapeHtml(myName) : ''}</h1><div class="team-meta">${escapeHtml(teamName)}</div>`;
+
+    // stat cards
+    const todoCount = currentTasks.filter(t => t.status === 'todo').length;
+    const inProgressCount = currentTasks.filter(t => t.status === 'in_progress').length;
+    const doneCount = currentTasks.filter(t => t.status === 'done').length;
+
+    document.getElementById('overviewStats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-number">${currentTasks.length}</div>
+        <div class="stat-label">Tasks</div>
+        <div class="stat-breakdown">${todoCount} to do · ${inProgressCount} in progress · ${doneCount} done</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">${currentMembers.length}</div>
+        <div class="stat-label">Team members</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">${currentNotes.length}</div>
+        <div class="stat-label">Notes</div>
+      </div>
+    `;
+
+    // next event
+    const upcoming = [...currentEvents]
+      .filter(e => new Date(e.date) >= new Date(new Date().toDateString()))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    document.getElementById('overviewNextEvent').innerHTML = upcoming.length > 0 ? `
+      <div class="overview-highlight-card" onclick="switchView('events')">
+        <div class="overview-highlight-label">Next event</div>
+        <div class="overview-highlight-value">${escapeHtml(upcoming[0].name)}</div>
+        <div class="overview-highlight-sub">${escapeHtml(new Date(upcoming[0].date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }))}</div>
+      </div>
+    ` : '';
+
+    // kickoff
+    document.getElementById('overviewKickoff').innerHTML = (currentSeasonInfo && currentSeasonInfo.kickoff) ? `
+      <div class="overview-highlight-card" onclick="switchView('countdown')">
+        <div class="overview-highlight-label">Season kickoff</div>
+        <div class="overview-highlight-value">${escapeHtml(currentSeasonInfo.gameName || 'Next season')}</div>
+        <div class="overview-highlight-sub">${escapeHtml(new Date(currentSeasonInfo.kickoff).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }))}</div>
+      </div>
+    ` : '';
+
+    // pinned notes
+    const pinned = currentNotes.filter(n => n.pinned);
+    document.getElementById('overviewPinnedNotes').innerHTML = pinned.length > 0
+      ? pinned.map(n => `
+          <div class="overview-pinned-note" onclick="switchView('notes'); openNotePage('${n.id}');">
+            📌 ${escapeHtml(n.title || 'Untitled note')}
+          </div>
+        `).join('')
+      : '<div class="empty-state">No pinned notes yet.</div>';
+
+    // quick links
+    document.getElementById('overviewQuickLinks').innerHTML = `
+      <button class="btn btn-secondary" onclick="switchView('roster')">👥 Roster</button>
+      <button class="btn btn-secondary" onclick="switchView('tasks')">✅ Tasks</button>
+      <button class="btn btn-secondary" onclick="switchView('notes')">📝 Notes</button>
+      <button class="btn btn-secondary" onclick="switchView('events')">🏆 Events</button>
+    `;
+  }
 
   function renderRoster() {
     const list = document.getElementById('rosterList');
