@@ -410,6 +410,20 @@
     color: #4a5f74;
   }
 
+  .due-date-badge {
+    font-size: 11px;
+    background: #eef3f7;
+    color: #4a5f74;
+    padding: 2px 8px;
+    border-radius: 3px;
+  }
+
+  .due-date-overdue {
+    background: #fff0ef;
+    color: #c23b3b;
+    font-weight: bold;
+  }
+
   .empty-state {
     font-size: 13px;
     color: #8a99a8;
@@ -1216,6 +1230,9 @@
       <label>Assign to</label>
       <div id="assigneeSlots"></div>
 
+      <label for="taskDueDate">Due date (optional)</label>
+      <input id="taskDueDate" type="date">
+
       <div class="refine-box">
         <label for="refineFeedback">Not quite right? Tell it what to fix</label>
         <div class="refine-row">
@@ -1514,12 +1531,15 @@
     const todoCount = currentTasks.filter(t => t.status === 'todo').length;
     const inProgressCount = currentTasks.filter(t => t.status === 'in_progress').length;
     const doneCount = currentTasks.filter(t => t.status === 'done').length;
+    const overdueCount = currentTasks.filter(t =>
+      t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date(new Date().toDateString())
+    ).length;
 
     document.getElementById('overviewStats').innerHTML = `
       <div class="stat-card">
         <div class="stat-number">${currentTasks.length}</div>
         <div class="stat-label">Tasks</div>
-        <div class="stat-breakdown">${todoCount} to do · ${inProgressCount} in progress · ${doneCount} done</div>
+        <div class="stat-breakdown">${todoCount} to do · ${inProgressCount} in progress · ${doneCount} done${overdueCount > 0 ? ` · <span style="color:#c23b3b;font-weight:bold;">${overdueCount} overdue</span>` : ''}</div>
       </div>
       <div class="stat-card">
         <div class="stat-number">${currentMembers.length}</div>
@@ -1649,6 +1669,11 @@
       const assignees = getTaskAssignees(t);
       const assigneeText = assignees.length > 0 ? '→ ' + assignees.map(escapeHtml).join(', ') : 'Unassigned';
 
+      const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date(new Date().toDateString());
+      const dueDateBadge = t.dueDate
+        ? `<span class="due-date-badge ${isOverdue ? 'due-date-overdue' : ''}">${isOverdue ? '⚠ Overdue: ' : 'Due '}${escapeHtml(new Date(t.dueDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</span>`
+        : '';
+
       return `
       <div class="task-card">
         <div class="task-top">
@@ -1666,6 +1691,7 @@
         <div class="task-meta">
           <span class="subsystem-badge">${escapeHtml(t.subsystem || 'general')}</span>
           <span class="assignee-tag">${assigneeText}</span>
+          ${dueDateBadge}
           <select class="status-select" id="statusSelect-${i}">
             <option value="todo" ${t.status === 'todo' ? 'selected' : ''}>To do</option>
             <option value="in_progress" ${t.status === 'in_progress' ? 'selected' : ''}>In progress</option>
@@ -1803,6 +1829,7 @@
 
     document.getElementById('taskTitle').value = t.title || '';
     document.getElementById('taskDesc').value = t.description || '';
+    document.getElementById('taskDueDate').value = t.dueDate || '';
 
     renderAssigneeSlots(getTaskAssignees(t));
 
@@ -1812,6 +1839,7 @@
 
   window.toggleAiForm = function() {
     editingTaskIndex = null;
+    document.getElementById('taskDueDate').value = '';
     document.getElementById('aiForm').classList.toggle('open');
     document.getElementById('aiResult').style.display = 'none';
   };
@@ -2068,6 +2096,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     const title = document.getElementById('taskTitle').value.trim();
     const description = document.getElementById('taskDesc').value.trim();
     const subsystem = document.getElementById('aiSubsystem').value;
+    const dueDate = document.getElementById('taskDueDate').value || null;
 
     const assignedNames = [...new Set(getAssigneeSlotValues().filter(v => v !== ''))];
 
@@ -2088,7 +2117,8 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
           title,
           description,
           subsystem,
-          assignedNames
+          assignedNames,
+          dueDate
         };
       } else {
         const newTask = {
@@ -2097,6 +2127,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
           description,
           subsystem,
           assignedNames,
+          dueDate,
           status: 'todo'
         };
         currentTasks = [...currentTasks, newTask];
@@ -2108,6 +2139,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
       editingTaskIndex = null;
       document.getElementById('aiForm').classList.remove('open');
       document.getElementById('aiDescription').value = '';
+      document.getElementById('taskDueDate').value = '';
     } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save task';
