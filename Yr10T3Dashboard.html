@@ -2430,24 +2430,38 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     document.getElementById('ftcSyncForm').classList.toggle('open');
   };
 
-  window.loadSeasonInfo = async function() {
-    const season = document.getElementById('ftcSeason').value.trim();
-    if (!season) {
-      document.getElementById('error').textContent = 'Enter a season year first (in the FTC sync section below).';
-      return;
-    }
+  async function fetchSeasonInfo(season) {
+    const res = await fetch(`${FTC_PROXY_URL}/?season=${season}&seasonInfo=1`);
+    if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
 
+  window.loadSeasonInfo = async function() {
     const btn = document.getElementById('loadSeasonBtn');
     btn.disabled = true;
     btn.textContent = 'Checking…';
     document.getElementById('error').textContent = '';
 
-    try {
-      const res = await fetch(`${FTC_PROXY_URL}/?season=${season}&seasonInfo=1`);
-      if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
+    // FTC seasons are numbered by their kickoff year. Find whichever
+    // season's kickoff hasn't happened yet — the "nearest" one.
+    const currentYear = new Date().getFullYear();
 
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+    try {
+      let data = await fetchSeasonInfo(currentYear);
+
+      // this year's season already kicked off — the next upcoming
+      // kickoff is next year's season instead
+      if (data.kickoff && new Date(data.kickoff) < new Date()) {
+        try {
+          const nextData = await fetchSeasonInfo(currentYear + 1);
+          if (nextData.kickoff) data = nextData;
+        } catch (e) {
+          // next season not published by FIRST yet — fall back to
+          // showing this year's (already-started) season info
+        }
+      }
 
       currentSeasonInfo = data; // { gameName, kickoff, eventCount, ... }
       await saveTeamField({ seasonGameName: data.gameName, seasonKickoff: data.kickoff });
@@ -2567,7 +2581,8 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
           description: `${phase.desc} Target window: ${phaseStart.toLocaleDateString()} – ${phaseEnd.toLocaleDateString()}.`,
           subsystem: phase.subsystem,
           assignedNames: [],
-          status: 'todo'
+          status: 'todo',
+          dueDate: phaseEnd.toISOString().split('T')[0]
         });
 
         cursor = phaseEnd;
