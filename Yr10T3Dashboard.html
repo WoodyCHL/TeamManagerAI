@@ -1198,8 +1198,12 @@
 <div class="panel" id="panel-tasks">
   <div class="panel-head">
     <h2>Tasks</h2>
-    <button class="btn btn-primary" id="createTaskBtn" style="display:none;" onclick="toggleAiForm()">+ Create task with AI</button>
+    <span style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+      <button class="btn btn-secondary" id="taskFilterBtn" onclick="toggleTaskFilter()">Show all tasks</button>
+      <button class="btn btn-primary" id="createTaskBtn" style="display:none;" onclick="toggleAiForm()">+ Create task with AI</button>
+    </span>
   </div>
+  <div id="taskFilterHint" style="font-size:12px;color:#6b7f92;margin-bottom:12px;">Showing tasks assigned to you.</div>
 
   <div class="ai-form" id="aiForm">
     <div class="ai-placeholder-note">
@@ -1256,7 +1260,10 @@
   <div id="notesListView">
     <div class="panel-head">
       <h2>Meeting notes</h2>
-      <button class="btn btn-primary" onclick="createNotePage()">+ New note</button>
+      <span style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="exportEngineeringNotebook()">↓ Export notebook</button>
+        <button class="btn btn-primary" onclick="createNotePage()">+ New note</button>
+      </span>
     </div>
     <div id="notesPageList"></div>
   </div>
@@ -1657,23 +1664,44 @@
 
   // ---------------- TASKS ----------------
 
+  // Members start with their own tasks; the button toggles to the full team list.
+  let showAllTasks = false;
+
+  window.toggleTaskFilter = function() {
+    showAllTasks = !showAllTasks;
+    renderTasks();
+  };
+
   function renderTasks() {
     const list = document.getElementById('taskList');
+    const filterBtn = document.getElementById('taskFilterBtn');
+    const hint = document.getElementById('taskFilterHint');
+    if (filterBtn) filterBtn.textContent = showAllTasks ? 'Show my tasks' : 'Show all tasks';
+    if (hint) hint.textContent = showAllTasks
+      ? 'Showing the full team task list.'
+      : `Showing tasks assigned to ${myName || 'you'}.`;
+
+    const visibleTasks = currentTasks
+      .map((task, originalIndex) => ({ task, originalIndex }))
+      .filter(({ task }) => showAllTasks ||
+        getTaskAssignees(task).some(name => (name || '').trim().toLowerCase() === (myName || '').trim().toLowerCase()));
 
     if (currentTasks.length === 0) {
       list.innerHTML = '<div class="empty-state">No tasks yet.</div>';
       return;
     }
+    if (visibleTasks.length === 0) {
+      list.innerHTML = `<div class="empty-state">${showAllTasks ? 'No tasks yet.' : 'No tasks assigned to you. Use “Show all tasks” to view the team list.'}</div>`;
+      return;
+    }
 
-    list.innerHTML = currentTasks.map((t, i) => {
+    list.innerHTML = visibleTasks.map(({ task: t, originalIndex: i }) => {
       const assignees = getTaskAssignees(t);
       const assigneeText = assignees.length > 0 ? '→ ' + assignees.map(escapeHtml).join(', ') : 'Unassigned';
-
       const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date(new Date().toDateString());
       const dueDateBadge = t.dueDate
         ? `<span class="due-date-badge ${isOverdue ? 'due-date-overdue' : ''}">${isOverdue ? '⚠ Overdue: ' : 'Due '}${escapeHtml(new Date(t.dueDate + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))}</span>`
         : '';
-
       return `
       <div class="task-card">
         <div class="task-top">
@@ -1681,12 +1709,10 @@
             <div class="task-title">${escapeHtml(t.title)}</div>
             <div class="task-desc">${escapeHtml(t.description || '')}</div>
           </div>
-          ${isCurrentUserLead ? `
-            <span class="task-admin-controls">
-              <button class="btn btn-secondary" id="editBtn-${i}">Edit</button>
-              <button class="btn btn-danger" id="deleteBtn-${i}">Delete</button>
-            </span>
-          ` : ''}
+          ${isCurrentUserLead ? `<span class="task-admin-controls">
+            <button class="btn btn-secondary" id="editBtn-${i}">Edit</button>
+            <button class="btn btn-danger" id="deleteBtn-${i}">Delete</button>
+          </span>` : ''}
         </div>
         <div class="task-meta">
           <span class="subsystem-badge">${escapeHtml(t.subsystem || 'general')}</span>
@@ -1698,21 +1724,63 @@
             <option value="done" ${t.status === 'done' ? 'selected' : ''}>Done</option>
           </select>
         </div>
-      </div>
-    `;
+      </div>`;
     }).join('');
 
-    currentTasks.forEach((t, i) => {
+    visibleTasks.forEach(({ originalIndex: i }) => {
       const select = document.getElementById(`statusSelect-${i}`);
       if (select) select.addEventListener('change', () => setTaskStatus(i, select.value));
-
       const editBtn = document.getElementById(`editBtn-${i}`);
       if (editBtn) editBtn.addEventListener('click', () => editTask(i));
-
       const deleteBtn = document.getElementById(`deleteBtn-${i}`);
       if (deleteBtn) deleteBtn.addEventListener('click', () => deleteTask(i));
     });
   }
+
+  // Download a self-contained, print-friendly HTML notebook containing all notes and tasks.
+  window.exportEngineeringNotebook = function() {
+    const teamName = document.getElementById('teamNameLabel').textContent || 'FTC Engineering Notebook';
+    const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+    })[ch]);
+    const statusLabel = status => ({ todo: 'To do', in_progress: 'In progress', done: 'Done' }[status] || 'To do');
+    const taskRows = currentTasks.length ? currentTasks.map(t => `
+      <article class="task">
+        <h3>${escape(t.title || 'Untitled task')}</h3>
+        <p>${escape(t.description || '')}</p>
+        <p><b>Subsystem:</b> ${escape(t.subsystem || 'General')} ·
+        <b>Assigned to:</b> ${escape(getTaskAssignees(t).join(', ') || 'Unassigned')} ·
+        <b>Status:</b> ${escape(statusLabel(t.status))}${t.dueDate ? ` · <b>Due:</b> ${escape(t.dueDate)}` : ''}</p>
+      </article>`).join('') : '<p>No tasks recorded.</p>';
+    const notePages = currentNotes.length ? currentNotes.map(n => `
+      <article class="note">
+        <h3>${escape(n.title || 'Untitled note')}</h3>
+        <p class="meta">${escape(n.subsystem || 'No subsystem')} · Author: ${escape(n.author || n.lastEditedBy || 'Unknown')} · Updated: ${n.updatedAt ? escape(new Date(n.updatedAt).toLocaleDateString()) : 'Unknown'}</p>
+        <div class="note-body">${n.body || '<p>No note content.</p>'}</div>
+      </article>`).join('') : '<p>No meeting notes recorded.</p>';
+    const documentHtml = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${escape(teamName)} - Engineering Notebook</title>
+      <style>
+      body{font:12pt Arial,sans-serif;line-height:1.5;color:#172b3b;max-width:850px;margin:35px auto;padding:0 24px}
+      h1{font-size:24pt;border-bottom:3px solid #ff7a3d;padding-bottom:10px}h2{margin-top:32px;border-bottom:1px solid #ccd6df;padding-bottom:6px}
+      h3{margin-bottom:6px}.meta{color:#586b7b;font-size:10pt}.task,.note{border:1px solid #d7e1e9;border-radius:6px;padding:12px 16px;margin:12px 0;break-inside:avoid}
+      .note-body img{max-width:100%;height:auto}button{padding:9px 14px;background:#0e2438;color:white;border:0;border-radius:5px;cursor:pointer}
+      @media print{body{margin:0;max-width:none;padding:0 10mm}button{display:none}.task,.note{border:1px solid #aaa}h2{break-after:avoid}}
+      </style></head><body>
+      <button onclick="window.print()">Print / Save as PDF</button>
+      <h1>${escape(teamName)}<br>Engineering Notebook</h1>
+      <p>Generated ${escape(new Date().toLocaleString())}</p>
+      <h2>Tasks</h2>${taskRows}<h2>Meeting notes</h2>${notePages}
+      </body></html>`;
+    const blob = new Blob([documentHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'FTC-Engineering-Notebook.html';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   // supports both the old single "assignedName" field (legacy tasks)
   // and the new "assignedNames" array, so nothing already saved breaks
