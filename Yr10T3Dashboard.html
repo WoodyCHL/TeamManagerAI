@@ -175,6 +175,31 @@
     color: #eef3f7;
   }
 
+  /* search, AI next-step and meeting attendance */
+  .search-box, .next-step-box, .attendance-box {
+    background: #f8fafb;
+    border: 1px solid #d7e1e9;
+    border-radius: 8px;
+    padding: 14px;
+    margin: 12px 0;
+  }
+  .search-result {
+    padding: 12px 0;
+    border-bottom: 1px solid #eef3f7;
+  }
+  .search-result:last-child { border-bottom: none; }
+  .search-result-title { font-weight: bold; font-size: 14px; }
+  .search-result-meta { color: #6b7f92; font-size: 11px; margin-top: 4px; }
+  .search-result-snippet { font-size: 13px; margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .attendance-title { font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; color: #6b7f92; margin-bottom: 8px; }
+  .attendance-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px 10px; }
+  .attendance-person { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: normal; text-transform: none; letter-spacing: normal; margin: 0; color: #0e2438; }
+  .attendance-person input { width: auto; margin: 0; }
+  .attendance-meta { font-size: 11px; color: #6b7f92; margin-top: 6px; }
+  .next-step-item { border-left: 3px solid #ff7a3d; padding: 8px 10px; margin: 8px 0; background: #fff; border-radius: 0 6px 6px 0; }
+  .next-step-item strong { display: block; font-size: 13px; }
+  .next-step-item span { display: block; font-size: 12px; color: #4a5f74; margin-top: 3px; }
+
   /* overview */
   .overview-greeting h1 {
     font-size: 20px;
@@ -1180,6 +1205,9 @@
     <div class="menu-item" data-view="tasks" onclick="switchView('tasks')">
       <span class="menu-icon">✅</span> Tasks
     </div>
+    <div class="menu-item" data-view="search" onclick="switchView('search')">
+      <span class="menu-icon">🔎</span> Search
+    </div>
     <div class="menu-item" data-view="notes" onclick="switchView('notes')">
       <span class="menu-icon">📝</span> Meeting notes
     </div>
@@ -1198,6 +1226,15 @@
 <!-- OVERVIEW -->
 <div class="panel" id="panel-overview">
   <div class="overview-greeting" id="overviewGreeting"></div>
+
+  <div class="next-step-box">
+    <div class="panel-head" style="margin-bottom:8px;">
+      <h2>What should I work on next?</h2>
+      <button class="btn btn-primary" id="nextStepBtn" onclick="suggestNextTask()">✨ Ask AI</button>
+    </div>
+    <div class="small muted">AI uses your team role, assigned tasks, status and due dates to prioritise your next steps.</div>
+    <div id="nextStepResult" style="margin-top:10px;"></div>
+  </div>
 
   <div class="overview-stats-row" id="overviewStats"></div>
 
@@ -1278,6 +1315,17 @@
   <div id="taskList"></div>
 </div>
 
+<!-- SEARCH -->
+<div class="panel" id="panel-search">
+  <div class="panel-head"><h2>Search tasks and notes</h2></div>
+  <div class="search-box">
+    <label for="globalSearchInput">Keyword</label>
+    <input id="globalSearchInput" type="search" placeholder="Search task titles, descriptions, notes…" oninput="searchTeamContent()">
+    <div class="small muted" style="margin-top:6px;">Searches task titles/descriptions, assignees, subsystems, and meeting-note titles/content.</div>
+  </div>
+  <div id="globalSearchResults"><div class="empty-state">Type a keyword to search your team’s tasks and notes.</div></div>
+</div>
+
 <!-- MEETING NOTES -->
 <div class="panel" id="panel-notes">
 
@@ -1323,6 +1371,13 @@
     </div>
 
     <div id="noteBodyEditor" class="note-body-editor" contenteditable="true" oninput="scheduleNoteSave()"></div>
+
+    <div class="attendance-box">
+      <div class="attendance-title">Meeting attendance</div>
+      <div class="small muted" style="margin-bottom:8px;">Tick each member who attended this meeting. Attendance is saved with this note.</div>
+      <div id="meetingAttendanceList" class="attendance-list"></div>
+      <div id="meetingAttendanceSummary" class="attendance-meta"></div>
+    </div>
 
     <div class="note-save-status" id="noteSaveStatus"></div>
 
@@ -1429,7 +1484,7 @@
   // anyone who views the page source. Fine for a free-tier
   // school project key, but worth knowing.
   // ---------------------------------------------------------
-  const OPENROUTER_API_KEY = "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";
+  const OPENROUTER_API_KEY = "YOUR_OPENROUTER_API_KEY";
 
   // Cloudflare Worker that proxies FTC Events API calls (avoids CORS
   // and keeps the FTC token server-side, not in this public repo)
@@ -1552,6 +1607,118 @@
       document.getElementById('error').textContent = 'Could not save: ' + err.message;
     }
   }
+
+  // ---------------- AI: WHAT SHOULD I WORK ON NEXT? ----------------
+
+  window.suggestNextTask = async function() {
+    const btn = document.getElementById('nextStepBtn');
+    const result = document.getElementById('nextStepResult');
+    const me = currentMembers.find(m => (m.name || '').trim().toLowerCase() === (myName || '').trim().toLowerCase());
+    const role = me?.role || 'No role assigned';
+    const mine = currentTasks.filter(t => isAssignedToMe(t) && t.status !== 'done');
+
+    if (!mine.length) {
+      result.innerHTML = '<div class="empty-state">You have no incomplete tasks assigned to you. Check the full task list or ask your team lead if something should be assigned.</div>';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Thinking…';
+    result.innerHTML = '<div class="empty-state">Reviewing your tasks and due dates…</div>';
+    document.getElementById('error').textContent = '';
+
+    const today = new Date();
+    const todayString = today.toISOString().slice(0, 10);
+    const taskSummary = mine.map((t, i) => {
+      const due = t.dueDate || 'No due date';
+      const daysLeft = t.dueDate ? Math.ceil((new Date(t.dueDate + 'T00:00:00').getTime() - new Date(todayString + 'T00:00:00').getTime()) / 86400000) : null;
+      return `${i + 1}. ${t.title || 'Untitled'} | subsystem: ${t.subsystem || 'general'} | status: ${t.status || 'todo'} | due: ${due}${daysLeft !== null ? ` | ${daysLeft < 0 ? `${Math.abs(daysLeft)} days overdue` : `${daysLeft} days left`}` : ''} | description: ${(t.description || '').slice(0, 240)}`;
+    }).join('\n');
+
+    const prompt = `You are a practical coach for a student FIRST Tech Challenge robotics team. Help this member decide what to work on next.
+
+Member: ${myName || 'Unknown'}
+Role: ${role}
+Today: ${todayString}
+Incomplete tasks assigned to this member:
+${taskSummary}
+
+Prioritise overdue and near-due work, then dependencies/blockers and tasks aligned with the member's role. Do not invent tasks or dates. Give 1 to 3 ranked recommendations using only the listed tasks, with a short reason and a concrete first action. If a task has no due date, do not pretend it does. Return ONLY valid JSON in this shape: {"recommendations":[{"task":"exact task title","reason":"short reason","firstAction":"concrete next action"}]}`;
+
+    try {
+      const parsed = await callAIForTask(prompt);
+      const recommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
+      result.innerHTML = recommendations.length ? recommendations.slice(0, 3).map((r, i) => `
+        <div class="next-step-item">
+          <strong>${i + 1}. ${escapeHtml(r.task || 'Recommended task')}</strong>
+          <span><b>Why:</b> ${escapeHtml(r.reason || 'Based on task priority and due date.')}</span>
+          <span><b>Start with:</b> ${escapeHtml(r.firstAction || 'Review the task description and identify the next step.')}</span>
+        </div>`).join('') : '<div class="empty-state">AI did not return any recommendations. Try again.</div>';
+    } catch (err) {
+      console.error(err);
+      result.innerHTML = `<div class="empty-state">Could not generate a recommendation: ${escapeHtml(err.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '✨ Ask AI';
+    }
+  };
+
+  // ---------------- SEARCH ----------------
+
+  window.searchTeamContent = function() {
+    const input = document.getElementById('globalSearchInput');
+    const results = document.getElementById('globalSearchResults');
+    const query = (input.value || '').trim().toLowerCase();
+    if (!query) {
+      results.innerHTML = '<div class="empty-state">Type a keyword to search your team’s tasks and notes.</div>';
+      return;
+    }
+
+    const taskResults = currentTasks.map((t, i) => ({
+      type: 'task', id: i, title: t.title || 'Untitled task',
+      meta: `${t.status || 'todo'} · ${t.subsystem || 'general'} · Assigned: ${getTaskAssignees(t).join(', ') || 'Nobody'}${t.dueDate ? ' · Due ' + t.dueDate : ''}`,
+      text: `${t.description || ''} ${t.title || ''} ${t.subsystem || ''} ${getTaskAssignees(t).join(' ')}`
+    })).filter(r => `${r.title} ${r.meta} ${r.text}`.toLowerCase().includes(query));
+
+    const noteResults = currentNotes.map(n => ({
+      type: 'note', id: n.id, title: n.title || 'Untitled note',
+      meta: `Meeting note · ${n.subsystem || 'No subsystem'} · ${n.author || 'Unknown author'}`,
+      text: (n.body || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    })).filter(r => `${r.title} ${r.meta} ${r.text}`.toLowerCase().includes(query));
+
+    const combined = [...taskResults, ...noteResults].slice(0, 50);
+    if (!combined.length) {
+      results.innerHTML = '<div class="empty-state">No matching tasks or notes found.</div>';
+      return;
+    }
+
+    results.innerHTML = `<div class="small muted">${taskResults.length + noteResults.length} match(es) found${taskResults.length + noteResults.length > 50 ? ' · showing first 50' : ''}.</div>` + combined.map(r => `
+      <div class="search-result">
+        <div class="search-result-title">${r.type === 'task' ? '✅' : '📝'} ${escapeHtml(r.title)}</div>
+        <div class="search-result-meta">${escapeHtml(r.meta)}</div>
+        <div class="search-result-snippet">${escapeHtml((r.text || '').slice(0, 280))}</div>
+        <button class="btn btn-secondary" style="margin-top:8px;" onclick="${r.type === 'task' ? `openSearchTask(${r.id})` : `openSearchNote('${String(r.id).replace(/'/g, '')}')`}">Open ${r.type}</button>
+      </div>`).join('');
+  };
+
+  window.openSearchTask = function(index) {
+    window.setTaskFilter('all');
+    window.switchView('tasks');
+    const task = currentTasks[index];
+    if (!task) return;
+    const cards = [...document.querySelectorAll('#taskList .task-card')];
+    const target = cards.find(card => card.querySelector('.task-title')?.textContent === (task.title || ''));
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.style.outline = '2px solid #ff7a3d';
+      setTimeout(() => target.style.outline = '', 1800);
+    }
+  };
+
+  window.openSearchNote = function(id) {
+    window.switchView('notes');
+    window.openNotePage(id);
+  };
 
   // ---------------- ROSTER ----------------
 
@@ -2231,7 +2398,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
           ${n.subsystem ? `<span class="subsystem-badge">${escapeHtml(n.subsystem)}</span>` : ''}
         </span>
         <span class="note-page-right">
-          <span class="note-page-meta">Edited by ${escapeHtml(n.lastEditedBy || n.author)} · ${new Date(n.updatedAt).toLocaleDateString()}</span>
+          <span class="note-page-meta">Edited by ${escapeHtml(n.lastEditedBy || n.author)} · ${new Date(n.updatedAt).toLocaleDateString()}${Array.isArray(n.attendees) && n.attendees.length ? ` · ${n.attendees.length} present` : ''}</span>
           <button class="pin-toggle-btn ${n.pinned ? 'pinned' : ''}" onclick="event.stopPropagation(); toggleNotePin('${n.id}')" title="${n.pinned ? 'Unpin' : 'Pin to top'}">★</button>
         </span>
       </div>
@@ -2274,6 +2441,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     document.getElementById('noteBodyEditor').innerHTML = note.body || '';
     document.getElementById('noteSubsystemSelect').value = note.subsystem || '';
     document.getElementById('noteSaveStatus').textContent = '';
+    renderMeetingAttendance(note);
 
     const pinBtn = document.getElementById('editorPinBtn');
     pinBtn.classList.toggle('pinned', !!note.pinned);
@@ -2286,6 +2454,45 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     document.getElementById('notesListView').style.display = 'none';
     document.getElementById('notesEditorView').style.display = 'block';
   };
+
+  function renderMeetingAttendance(note) {
+    const list = document.getElementById('meetingAttendanceList');
+    const checked = new Set(Array.isArray(note.attendees) ? note.attendees : []);
+    if (!currentMembers.length) {
+      list.innerHTML = '<div class="empty-state">No team members found.</div>';
+      document.getElementById('meetingAttendanceSummary').textContent = '';
+      return;
+    }
+    list.innerHTML = currentMembers.map((member, index) => `
+      <label class="attendance-person">
+        <input type="checkbox" data-attendance-index="${index}" ${checked.has(member.name) ? 'checked' : ''}>
+        <span>${escapeHtml(member.name)}</span>
+      </label>`).join('');
+    list.querySelectorAll('input[data-attendance-index]').forEach(input => {
+      input.addEventListener('change', () => saveMeetingAttendance());
+    });
+    updateAttendanceSummary(note.attendees || []);
+  }
+
+  function updateAttendanceSummary(attendees) {
+    const count = Array.isArray(attendees) ? attendees.length : 0;
+    document.getElementById('meetingAttendanceSummary').textContent = `${count} of ${currentMembers.length} member(s) marked present`;
+  }
+
+  async function saveMeetingAttendance() {
+    if (!currentNoteId) return;
+    const attendees = [...document.querySelectorAll('#meetingAttendanceList input[data-attendance-index]:checked')]
+      .map(input => currentMembers[Number(input.dataset.attendanceIndex)]?.name)
+      .filter(Boolean);
+    currentNotes = currentNotes.map(n => n.id === currentNoteId
+      ? { ...n, attendees, attendanceUpdatedAt: Date.now(), attendanceRecordedBy: myName || 'Unknown' }
+      : n);
+    updateAttendanceSummary(attendees);
+    document.getElementById('noteSaveStatus').textContent = 'Saving attendance…';
+    await saveTeamField({ notes: currentNotes });
+    document.getElementById('noteSaveStatus').textContent = 'Attendance saved';
+    renderNotes();
+  }
 
   window.toggleCurrentNotePin = async function() {
     if (!currentNoteId) return;
@@ -3260,6 +3467,7 @@ Omit a role's array entirely (don't include the key) if there's no evidence-base
             ${n.createdAt ? escapeHtml(fmtDate(n.createdAt)) + ' · ' : ''}Written by ${escapeHtml(n.author || 'Unknown')}
             ${n.lastEditedBy ? ' · Last edited by ' + escapeHtml(n.lastEditedBy) : ''}
             ${n.subsystem ? ' · ' + escapeHtml(n.subsystem) : ''}
+            ${Array.isArray(n.attendees) ? ' · Present: ' + escapeHtml(n.attendees.join(', ') || 'None recorded') : ' · Attendance not recorded'}
           </div>
           <div class="note-body">${sanitizeHtml(n.body)}</div>
         </div>
