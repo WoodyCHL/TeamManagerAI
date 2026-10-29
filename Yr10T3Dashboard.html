@@ -1181,6 +1181,24 @@
     margin-top: 16px;
     font-size: 13px;
   }
+
+  /* AI note assistant (NEW) */
+  body.note-wide { max-width: 1040px; }
+  .note-layout { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 900px) {
+    .note-layout { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; }
+  }
+  .ai-chat-box { background: #f8fafb; border: 1px solid #d7e1e9; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; }
+  .ai-chat-title { font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; color: #6b7f92; margin-bottom: 8px; }
+  .ai-chat-log { height: 340px; overflow-y: auto; background: #fff; border: 1px solid #eef3f7; border-radius: 6px; padding: 8px; font-size: 13px; line-height: 1.5; }
+  .chat-msg { margin-bottom: 8px; padding: 8px 10px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .chat-user { background: #0e2438; color: #eef3f7; margin-left: 24px; }
+  .chat-ai { background: #fff6ee; border-left: 3px solid #ff7a3d; color: #0e2438; margin-right: 12px; }
+  .chat-hint { font-size: 12px; color: #8a99a8; font-style: italic; }
+  .chat-row { display: flex; gap: 6px; margin-top: 8px; }
+  .chat-row input { margin-top: 0; flex: 1; }
+  .chat-row .btn { flex-shrink: 0; }
+  .chat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -1343,6 +1361,7 @@
 
   <!-- EDITOR VIEW -->
   <div id="notesEditorView" style="display:none;">
+   <div class="note-layout"><div class="note-main">
     <div class="panel-head">
       <button class="btn btn-secondary" onclick="closeNoteEditor()">&larr; Back</button>
       <span>
@@ -1390,6 +1409,25 @@
       <button class="btn btn-secondary" id="extractTasksBtn" onclick="extractTasksFromNote()">✨ Generate tasks from this note</button>
       <div id="extractedTasksList"></div>
     </div>
+   </div>
+
+   <!-- AI BUILD ASSISTANT (NEW) -->
+   <aside class="ai-chat-box" aria-label="AI build assistant">
+     <div class="ai-chat-title">✨ AI build assistant</div>
+     <div class="ai-chat-log" id="aiChatLog" aria-live="polite">
+       <div class="chat-hint">Ask about this note, e.g. "What should I use for an intake?"</div>
+     </div>
+     <div class="chat-chips">
+       <button type="button" class="filter-chip" onclick="quickAsk('Suggest the best way to build this, with parts and trade-offs.')">Best way to build this</button>
+       <button type="button" class="filter-chip" onclick="quickAsk('What could go wrong with the ideas in this note?')">What could go wrong?</button>
+     </div>
+     <div class="chat-row">
+       <label for="aiChatInput" style="display:none">Ask the AI</label>
+       <input id="aiChatInput" placeholder="Ask a question…" onkeydown="if(event.key==='Enter') sendChat()">
+       <button type="button" class="btn btn-primary" id="aiChatSend" onclick="sendChat()">Send</button>
+     </div>
+   </aside>
+   </div>
   </div>
 
 </div>
@@ -1484,7 +1522,7 @@
   // anyone who views the page source. Fine for a free-tier
   // school project key, but worth knowing.
   // ---------------------------------------------------------
-  const OPENROUTER_API_KEY = "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";
+  const OPENROUTER_API_KEY = "YOUR_OPENROUTER_API_KEY";
 
   // Cloudflare Worker that proxies FTC Events API calls (avoids CORS
   // and keeps the FTC token server-side, not in this public repo)
@@ -2451,6 +2489,9 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     document.getElementById('extractedTasksList').innerHTML = '';
     document.getElementById('noteSummaryResult').innerHTML = '';
 
+    resetChat();                                   // NEW: fresh AI chat for each note
+    document.body.classList.add('note-wide');      // NEW: widen page for the side box
+
     document.getElementById('notesListView').style.display = 'none';
     document.getElementById('notesEditorView').style.display = 'block';
   };
@@ -2504,6 +2545,7 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
   };
 
   window.closeNoteEditor = function() {
+    document.body.classList.remove('note-wide');   // NEW: back to normal width
     currentNoteId = null;
     document.getElementById('notesEditorView').style.display = 'none';
     document.getElementById('notesListView').style.display = 'block';
@@ -2664,6 +2706,104 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     lastExtractedTasks = [];
     document.getElementById('extractedTasksList').innerHTML =
       `<div class="empty-state">Added ${newTasks.length} task${newTasks.length > 1 ? 's' : ''} — check the Tasks tab.</div>`;
+  };
+
+  // ---------------- AI: NOTE CHAT ASSISTANT (NEW) ----------------
+
+  let chatHistory = []; // [{role:'user'|'assistant', content:'...'}]
+
+  function resetChat() {
+    chatHistory = [];
+    document.getElementById('aiChatLog').innerHTML =
+      '<div class="chat-hint">Ask about this note, e.g. "What should I use for an intake?"</div>';
+    document.getElementById('aiChatInput').value = '';
+  }
+
+  function addChatBubble(role, text) {
+    const log = document.getElementById('aiChatLog');
+    log.querySelector('.chat-hint')?.remove();
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + (role === 'user' ? 'chat-user' : 'chat-ai');
+    div.textContent = text; // textContent = safe, AI text can't inject HTML
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+    return div;
+  }
+
+  // Same model fallback as callAIForTask, but returns plain text instead of JSON
+  async function callAIChat(messages) {
+    const models = await getFreeModels();
+    let lastError = null;
+    for (const model of models) {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model, temperature: 0.4, messages })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (text) return text.trim();
+        lastError = 'Empty response';
+      } else {
+        lastError = await res.text();
+      }
+    }
+    throw new Error(`All AI models unavailable. Last error: ${lastError}`);
+  }
+
+  window.quickAsk = function(q) {
+    document.getElementById('aiChatInput').value = q;
+    sendChat();
+  };
+
+  window.sendChat = async function() {
+    const input = document.getElementById('aiChatInput');
+    const question = input.value.trim();
+    if (!question) return;
+
+    const noteTitle = document.getElementById('noteTitleInput').value.trim() || 'Untitled';
+    const noteText = document.getElementById('noteBodyEditor').innerText.trim().slice(0, 3000);
+    const subsystem = document.getElementById('noteSubsystemSelect').value || 'not tagged';
+
+    const system = `You are a friendly, practical mentor for a student FIRST Tech Challenge (FTC) robotics team.
+
+${FTC_HARDWARE_RULES}
+
+The team is writing a meeting note.
+Title: "${noteTitle}"
+Subsystem: ${subsystem}
+Note content:
+"""
+${noteText || '(empty)'}
+"""
+
+Answer the student's question using the note as context. Give 2 to 3 concrete options, say the main pros and cons of each, then clearly recommend one and say why. Keep it under 180 words, plain text (no markdown symbols), and finish with one short question that helps them refine the idea. Do not invent facts about their robot that are not in the note; if you need more detail, ask for it.`;
+
+    input.value = '';
+    addChatBubble('user', question);
+    chatHistory.push({ role: 'user', content: question });
+
+    const sendBtn = document.getElementById('aiChatSend');
+    sendBtn.disabled = true;
+    sendBtn.textContent = '…';
+    const thinking = addChatBubble('assistant', 'Thinking…');
+    document.getElementById('error').textContent = '';
+
+    try {
+      const reply = await callAIChat([{ role: 'system', content: system }, ...chatHistory.slice(-8)]);
+      thinking.textContent = reply;
+      chatHistory.push({ role: 'assistant', content: reply });
+    } catch (err) {
+      console.error(err);
+      thinking.textContent = 'Could not get an answer: ' + err.message;
+      chatHistory.pop(); // drop the unanswered question so history stays clean
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send';
+      const log = document.getElementById('aiChatLog');
+      log.scrollTop = log.scrollHeight;
+    }
   };
 
   window.formatDoc = function(command, value) {
