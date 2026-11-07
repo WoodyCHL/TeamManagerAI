@@ -1522,7 +1522,7 @@
   // anyone who views the page source. Fine for a free-tier
   // school project key, but worth knowing.
   // ---------------------------------------------------------
-  const OPENROUTER_API_KEY = "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";
+  const AI_PROXY_URL = "https://ai-proxy.s12471.workers.dev";
   // Cloudflare Worker that proxies FTC Events API calls (avoids CORS
   // and keeps the FTC token server-side, not in this public repo)
   const FTC_PROXY_URL = "https://restless-mouse-a2ff.s12471.workers.dev";
@@ -2246,21 +2246,15 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     let lastError = null;
 
     for (const model of models) {
-      res = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0.3,
-            messages: [{ role: "user", content: promptText }]
-          })
-        }
-      );
+            res = await fetch(AI_PROXY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          temperature: 0.3,
+          messages: [{ role: "user", content: promptText }]
+        })
+      });
 
       if (res.ok) break;
       lastError = await res.text();
@@ -2734,9 +2728,9 @@ Respond with ONLY valid JSON, no markdown fences, no extra text — a JSON array
     const models = await getFreeModels();
     let lastError = null;
     for (const model of models) {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            const res = await fetch(AI_PROXY_URL, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model, temperature: 0.4, messages })
       });
       if (res.ok) {
